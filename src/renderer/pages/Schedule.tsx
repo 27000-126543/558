@@ -16,8 +16,12 @@ import {
   Alert,
   Steps,
   InputNumber,
+  Checkbox,
+  Statistic,
+  Row,
+  Col,
 } from 'antd';
-import { PlusOutlined, EyeOutlined, EditOutlined, PlayCircleOutlined, CheckCircleOutlined, WarningOutlined, CheckOutlined, EnvironmentOutlined, TeamOutlined, UserOutlined, ClockCircleOutlined } from '@ant-design/icons';
+import { PlusOutlined, EyeOutlined, EditOutlined, PlayCircleOutlined, CheckCircleOutlined, WarningOutlined, CheckOutlined, EnvironmentOutlined, TeamOutlined, UserOutlined, ClockCircleOutlined, UndoOutlined, VideoCameraOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { scheduleApi, routeApi, vehicleApi, driverApi, adjustmentApi } from '../api';
 import type { Schedule, Route, Vehicle, Driver } from '../../shared/types';
@@ -68,8 +72,27 @@ const SchedulePage: React.FC<SchedulePageProps> = ({ onRefreshAlerts }) => {
   const [stationAffectedOpen, setStationAffectedOpen] = useState(false);
   const [affectedPassengers, setAffectedPassengers] = useState<any[]>([]);
   const [viewingStationId, setViewingStationId] = useState<number | null>(null);
+  const [stationPassengers, setStationPassengers] = useState<any[]>([]);
+  const [replayOpen, setReplayOpen] = useState(false);
+  const [replaySchedule, setReplaySchedule] = useState<any>(null);
+  const [runSummaries, setRunSummaries] = useState<Record<number, any>>({});
   const [form] = Form.useForm();
   const [adjustForm] = Form.useForm();
+
+  const loadRunSummaries = async (scheduleIds: number[]) => {
+    const summaries: Record<number, any> = {};
+    for (const sid of scheduleIds) {
+      try {
+        const summary = await scheduleApi.getStationLogs(sid);
+        const totalBoarded = summary.reduce((sum: number, log: any) => sum + (log.boarded_count || 0), 0);
+        const totalAbsent = summary.reduce((sum: number, log: any) => sum + (log.absent_count || 0), 0);
+        const hasDelay = summary.some((log: any) => log.is_delayed === 1);
+        const currentSeq = Math.max(...summary.filter((l: any) => l.actual_arrival_time).map((l: any) => l.station_seq), -1);
+        summaries[sid] = { totalBoarded, totalAbsent, hasDelay, currentSeq, stationCount: summary.length };
+      } catch {}
+    }
+    setRunSummaries(summaries);
+  };
 
   const loadData = useCallback(async () => {
     setLoading(true);
@@ -84,6 +107,10 @@ const SchedulePage: React.FC<SchedulePageProps> = ({ onRefreshAlerts }) => {
       setRoutes(r);
       setVehicles(v);
       setDrivers(d);
+      const runningIds = s.filter((sch: any) => sch.status === 'departed' || sch.status === 'arrived').map((sch: any) => sch.id);
+      if (runningIds.length > 0) {
+        loadRunSummaries(runningIds);
+      }
     } catch (err: any) {
       message.error(err.message);
     } finally {
@@ -219,21 +246,58 @@ const SchedulePage: React.FC<SchedulePageProps> = ({ onRefreshAlerts }) => {
   const handleOpenTripTrack = async (record: Schedule) => {
     setCurrentSchedule(record);
     try {
-      const logs = await scheduleApi.getStationLogs(record.id);
+      const [logs, passengersResp] = await Promise.all([
+        scheduleApi.getStationLogs(record.id),
+        scheduleApi.getPassengers(record.id),
+      ]);
       setStationLogs(logs);
+      setStationPassengers(passengersResp?.passengers || []);
       setTripTrackOpen(true);
     } catch (err: any) {
       message.error(err.message);
     }
   };
 
+  const handleOpenReplay = async (record: Schedule) => {
+    setReplaySchedule(record);
+    try {
+      const logs = await scheduleApi.getStationLogs(record.id);
+      setStationLogs(logs);
+      setReplayOpen(true);
+    } catch (err: any) {
+      message.error(err.message);
+    }
+  };
+
+  const handleRevokeAbsent = async (absentRecordId: number) => {
+    Modal.confirm({
+      title: '确认撤销该未到记录?',
+      content: '撤销后将恢复该员工5分信用分，请确认操作。',
+      onOk: async () => {
+        try {
+          await scheduleApi.revokeStationAbsent(absentRecordId);
+          message.success('已撤销，信用分已恢复');
+          if (currentSchedule) {
+            const logs = await scheduleApi.getStationLogs(currentSchedule.id);
+            setStationLogs(logs);
+            loadRunSummaries([currentSchedule.id]);
+          }
+        } catch (err: any) {
+          message.error(err.message);
+        }
+      },
+    });
+  };
+
   const handleOpenStationForm = (log: any) => {
     setEditingLogId(log.id);
+    const preSelected = (log.absent_passengers || []).map((p: any) => p.employee_id);
     stationForm.setFieldsValue({
       boardedCount: log.boarded_count || 0,
       absentCount: log.absent_count || 0,
       actualArrivalTime: log.actual_arrival_time ? dayjs(log.actual_arrival_time) : dayjs(),
       actualDepartureTime: log.actual_departure_time ? dayjs(log.actual_departure_time) : dayjs().add(2, 'minute'),
+      absentPassengerIds: preSelected,
     });
   };
 
@@ -248,16 +312,21 @@ const SchedulePage: React.FC<SchedulePageProps> = ({ onRefreshAlerts }) => {
           actualDepartureTime: values.actualDepartureTime?.format('YYYY-MM-DD HH:mm:ss'),
           boardedCount: values.boardedCount || 0,
           absentCount: values.absentCount || 0,
+          absentPassengerIds: values.absentPassengerIds || [],
         }
       );
       message.success('站点记录已保存');
       if (resp?.newAlert && onRefreshAlerts) {
         onRefreshAlerts();
       }
+      if (resp?.absentPassengers && resp.absentPassengers.length > 0) {
+        message.info(`已记录 ${resp.absentPassengers.length} 名未到乘客，信用分已扣减`);
+      }
       setEditingLogId(null);
       stationForm.resetFields();
       const logs = await scheduleApi.getStationLogs(currentSchedule.id);
       setStationLogs(logs);
+      loadRunSummaries([currentSchedule.id]);
       loadData();
     } catch (err: any) {
       message.error(err.message);
@@ -316,6 +385,34 @@ const SchedulePage: React.FC<SchedulePageProps> = ({ onRefreshAlerts }) => {
     { title: '发车时间', dataIndex: 'departureTime', key: 'departureTime' },
     { title: '乘车人数', dataIndex: 'passengerCount', key: 'passengerCount' },
     {
+      title: '已上车',
+      key: 'totalBoarded',
+      render: (_: any, record: Schedule) => {
+        const s = runSummaries[record.id];
+        if (!s || s.currentSeq < 0) return <span style={{ color: '#999' }}>-</span>;
+        return <Tag color="green"><TeamOutlined /> {s.totalBoarded}</Tag>;
+      },
+    },
+    {
+      title: '未到',
+      key: 'totalAbsent',
+      render: (_: any, record: Schedule) => {
+        const s = runSummaries[record.id];
+        if (!s || s.currentSeq < 0) return <span style={{ color: '#999' }}>-</span>;
+        if (s.totalAbsent === 0) return <span style={{ color: '#52c41a' }}>0</span>;
+        return <Tag color="red"><UserOutlined /> {s.totalAbsent}</Tag>;
+      },
+    },
+    {
+      title: '站点延误',
+      key: 'hasDelay',
+      render: (_: any, record: Schedule) => {
+        const s = runSummaries[record.id];
+        if (!s || s.currentSeq < 0) return <span style={{ color: '#999' }}>-</span>;
+        return s.hasDelay ? <Tag color="orange">有延误</Tag> : <Tag color="green">准点</Tag>;
+      },
+    },
+    {
       title: '状态',
       dataIndex: 'status',
       key: 'status',
@@ -332,6 +429,11 @@ const SchedulePage: React.FC<SchedulePageProps> = ({ onRefreshAlerts }) => {
           {(record.status === 'departed' || record.status === 'delayed') && (
             <Button size="small" type="link" icon={<EnvironmentOutlined />} onClick={() => handleOpenTripTrack(record)}>
               行程跟踪
+            </Button>
+          )}
+          {record.status === 'arrived' && (
+            <Button size="small" type="link" icon={<VideoCameraOutlined />} onClick={() => handleOpenReplay(record)}>
+              行程回放
             </Button>
           )}
           {record.status === 'pending' && (
@@ -615,15 +717,37 @@ const SchedulePage: React.FC<SchedulePageProps> = ({ onRefreshAlerts }) => {
                     </div>
                   );
                   const stDesc = log.actual_arrival_time ? (
-                    <Space size="large" style={{ fontSize: 12, color: '#666' }}>
-                      <span><CheckCircleOutlined style={{ color: '#52c41a' }} /> 实际到达 {log.actual_arrival_time.substring(11, 16)}</span>
-                      {log.boarded_count !== undefined && log.boarded_count > 0 && (
-                        <span><TeamOutlined /> 上车 {log.boarded_count}人</span>
+                    <div>
+                      <Space size="large" style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+                        <span><CheckCircleOutlined style={{ color: '#52c41a' }} /> 实际到达 {log.actual_arrival_time.substring(11, 16)}</span>
+                        {log.boarded_count !== undefined && log.boarded_count > 0 && (
+                          <span><TeamOutlined /> 上车 {log.boarded_count}人</span>
+                        )}
+                        {log.absent_count !== undefined && log.absent_count > 0 && (
+                          <span style={{ color: '#ff4d4f' }}><UserOutlined /> 未到 {log.absent_count}人</span>
+                        )}
+                      </Space>
+                      {log.absent_passengers && log.absent_passengers.length > 0 && (
+                        <Card size="small" style={{ marginTop: 8, marginBottom: 8 }} title={<span style={{ fontSize: 12, color: '#ff4d4f' }}>未到乘客列表</span>}>
+                          {log.absent_passengers.map((p: any) => (
+                            <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: 12, borderBottom: '1px solid #f0f0f0' }}>
+                              <span>
+                                <Tag color="red">未到</Tag>
+                                {p.employee_name}（{p.employee_no}）- {p.department}
+                              </span>
+                              <Button
+                                size="small"
+                                type="link"
+                                icon={<UndoOutlined />}
+                                onClick={(e) => { e.stopPropagation(); handleRevokeAbsent(p.id); }}
+                              >
+                                撤销（恢复5分）
+                              </Button>
+                            </div>
+                          ))}
+                        </Card>
                       )}
-                      {log.absent_count !== undefined && log.absent_count > 0 && (
-                        <span style={{ color: '#ff4d4f' }}><UserOutlined /> 未到 {log.absent_count}人</span>
-                      )}
-                    </Space>
+                    </div>
                   ) : (
                     <span style={{ fontSize: 12, color: '#999' }}>未到达</span>
                   );
@@ -649,6 +773,24 @@ const SchedulePage: React.FC<SchedulePageProps> = ({ onRefreshAlerts }) => {
                       <InputNumber min={0} style={{ width: '100%' }} />
                     </Form.Item>
                   </div>
+                  <Form.Item label="选择未到乘客（未乘车将扣5分/人）" name="absentPassengerIds">
+                    <Checkbox.Group style={{ width: '100%' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                        {(() => {
+                          const currentLog = stationLogs.find((l: any) => l.id === editingLogId);
+                          const stationPass = stationPassengers.filter((p: any) => p.station_id === currentLog?.station_id);
+                          if (stationPass.length === 0) {
+                            return <span style={{ color: '#999' }}>该站暂无已分配座位的乘客</span>;
+                          }
+                          return stationPass.map((p: any) => (
+                            <Checkbox key={p.employee_id} value={p.employee_id}>
+                              {p.employee_name}（{p.employee_no}） - 座位号: {p.seat_no}
+                            </Checkbox>
+                          ));
+                        })()}
+                      </div>
+                    </Checkbox.Group>
+                  </Form.Item>
                   <div style={{ textAlign: 'right' }}>
                     <Space>
                       <Button onClick={() => { setEditingLogId(null); stationForm.resetFields(); }}>取消</Button>
@@ -687,6 +829,89 @@ const SchedulePage: React.FC<SchedulePageProps> = ({ onRefreshAlerts }) => {
             dataSource={affectedPassengers}
           />
         )}
+      </Modal>
+
+      <Modal
+        title={`行程回放 - ${replaySchedule?.scheduleNo || ''}`}
+        open={replayOpen}
+        onCancel={() => { setReplayOpen(false); setReplaySchedule(null); }}
+        footer={[
+          <Row gutter={16} key="summary" style={{ width: '100%', marginRight: 16 }}>
+            <Col span={8}>
+              <Statistic title="已上车人数" value={stationLogs.reduce((s, l) => s + (l.boarded_count || 0), 0)} prefix={<TeamOutlined style={{ color: '#52c41a' }} />} />
+            </Col>
+            <Col span={8}>
+              <Statistic title="未到人数" value={stationLogs.reduce((s, l) => s + (l.absent_count || 0), 0)} prefix={<UserOutlined style={{ color: '#ff4d4f' }} />} />
+            </Col>
+            <Col span={8}>
+              <Statistic
+                title="准点情况"
+                value={stationLogs.some(l => l.is_delayed === 1) ? '有延误' : '全程准点'}
+                valueStyle={{ color: stationLogs.some(l => l.is_delayed === 1) ? '#faad14' : '#52c41a' }}
+              />
+            </Col>
+          </Row>,
+          <Button key="close" onClick={() => { setReplayOpen(false); setReplaySchedule(null); }}>关闭</Button>,
+        ]}
+        width={900}
+      >
+        <Card size="small" style={{ marginBottom: 16 }}>
+          <Steps direction="vertical" size="small" current={stationLogs.length}>
+            {stationLogs.map((log: any, index: number) => {
+              const stTitle = (
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Space>
+                    <span style={{ fontWeight: 600 }}>{log.station_name}</span>
+                    {log.is_delayed ? <Tag color="red">晚到{log.delay_minutes}分钟</Tag> : null}
+                  </Space>
+                  <Space>
+                    <span style={{ color: '#999', fontSize: 12 }}>
+                      <ClockCircleOutlined /> 计划 {log.planned_arrival_time}
+                    </span>
+                    {log.is_delayed === 1 && (
+                      <Button
+                        type="link"
+                        size="small"
+                        danger
+                        onClick={() => handleViewAffectedPassengers(log.station_id)}
+                      >
+                        影响乘客
+                      </Button>
+                    )}
+                  </Space>
+                </div>
+              );
+              const stDesc = log.actual_arrival_time ? (
+                <div>
+                  <Space size="large" style={{ fontSize: 12, color: '#666', marginBottom: 8 }}>
+                    <span><CheckCircleOutlined style={{ color: '#52c41a' }} /> 实际到达 {log.actual_arrival_time.substring(11, 16)}</span>
+                    {log.boarded_count !== undefined && log.boarded_count > 0 && (
+                      <span><TeamOutlined /> 上车 {log.boarded_count}人</span>
+                    )}
+                    {log.absent_count !== undefined && log.absent_count > 0 && (
+                      <span style={{ color: '#ff4d4f' }}><UserOutlined /> 未到 {log.absent_count}人</span>
+                    )}
+                  </Space>
+                  {log.absent_passengers && log.absent_passengers.length > 0 && (
+                    <Card size="small" style={{ marginTop: 8, marginBottom: 8 }} title={<span style={{ fontSize: 12, color: '#ff4d4f' }}>未到乘客列表</span>}>
+                      {log.absent_passengers.map((p: any) => (
+                        <div key={p.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '4px 0', fontSize: 12, borderBottom: '1px solid #f0f0f0' }}>
+                          <span>
+                            <Tag color="red">未到</Tag>
+                            {p.employee_name}（{p.employee_no}）- {p.department}
+                          </span>
+                        </div>
+                      ))}
+                    </Card>
+                  )}
+                </div>
+              ) : (
+                <span style={{ fontSize: 12, color: '#999' }}>未到达</span>
+              );
+              return <Step key={log.id} title={stTitle} description={stDesc} status={log.actual_arrival_time ? 'finish' : 'wait'} />;
+            })}
+          </Steps>
+        </Card>
       </Modal>
     </div>
   );

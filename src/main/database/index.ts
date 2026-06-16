@@ -20,12 +20,20 @@ export interface Database {
 
 let db: Database | null = null;
 let SQL: SqlJsStatic | null = null;
+let innerDbRef: SqlJsDatabase | null = null;
+let dbPathRef: string = '';
 
 async function initSql() {
   if (!SQL) {
     SQL = await initSqlJs();
   }
   return SQL;
+}
+
+export async function saveDbNow() {
+  if (innerDbRef && dbPathRef) {
+    saveDb(dbPathRef, innerDbRef);
+  }
 }
 
 function toArray(args: IArguments | any[]): any[] {
@@ -116,6 +124,8 @@ export async function getDb(): Promise<Database> {
 
     db = wrapDatabase(innerDb);
     db.pragma('foreign_keys = ON');
+    innerDbRef = innerDb;
+    dbPathRef = dbPath;
     initTables(db);
     initSeedData(db);
     saveDb(dbPath, innerDb);
@@ -315,6 +325,31 @@ function initTables(database: Database) {
       vehicle_utilization TEXT,
       overall_on_time_rate REAL,
       overall_commute_rate REAL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS station_absent_records (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      schedule_id INTEGER NOT NULL,
+      station_log_id INTEGER NOT NULL,
+      station_id INTEGER NOT NULL,
+      employee_id INTEGER NOT NULL,
+      request_id INTEGER NOT NULL,
+      revoked INTEGER DEFAULT 0,
+      revoked_at TEXT,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE CASCADE,
+      FOREIGN KEY (station_log_id) REFERENCES schedule_station_logs(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS credit_score_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      employee_id INTEGER NOT NULL,
+      score_change INTEGER NOT NULL,
+      new_score INTEGER NOT NULL,
+      reason TEXT NOT NULL,
+      related_type TEXT,
+      related_id INTEGER,
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
   `);

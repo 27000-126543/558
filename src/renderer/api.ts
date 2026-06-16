@@ -16,7 +16,8 @@ export const employeeApi = {
   create: (data: any) => call<Employee>(IPC.EMPLOYEE.CREATE, data),
   update: (id: number, data: any) => call<Employee>(IPC.EMPLOYEE.UPDATE, id, data),
   remove: (id: number) => call<boolean>(IPC.EMPLOYEE.DELETE, id),
-  validate: (id: number, direction: string) => call<{ valid: boolean; reason?: string }>(IPC.EMPLOYEE.VALIDATE, id, direction),
+  validate: (id: number, direction: string) => call<{ valid: boolean; reason?: string; recentLogs?: any[] }>(IPC.EMPLOYEE.VALIDATE, id, direction),
+  getCommutingProfile: (id: number) => call<any>(IPC.EMPLOYEE.GET_COMMUTING_PROFILE, id),
 };
 
 export const driverApi = {
@@ -55,6 +56,8 @@ export const scheduleApi = {
   recordStationArrival: (sid: number, logId: number, data: any) => call<any>(IPC.SCHEDULE.RECORD_STATION_ARRIVAL, sid, logId, data),
   getStationLogs: (id: number) => call<any[]>(IPC.SCHEDULE.GET_STATION_LOGS, id),
   getStationAffectedPassengers: (sid: number, stid: number) => call<any[]>(IPC.SCHEDULE.GET_STATION_AFFECTED_PASSENGERS, sid, stid),
+  revokeStationAbsent: (recordId: number) => call<any>(IPC.SCHEDULE.REVOKE_STATION_ABSENT, recordId),
+  getStationAbsentPassengers: (logId: number) => call<any[]>(IPC.SCHEDULE.GET_STATION_ABSENT_PASSENGERS, logId),
 };
 
 export const rideRequestApi = {

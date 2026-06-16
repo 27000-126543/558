@@ -6,6 +6,7 @@ const IPC = {
     UPDATE: 'employee:update',
     DELETE: 'employee:delete',
     VALIDATE: 'employee:validate',
+    GET_COMMUTING_PROFILE: 'employee:getCommutingProfile',
   },
   DRIVER: {
     GET_ALL: 'driver:getAll',
@@ -40,6 +41,8 @@ const IPC = {
     RECORD_STATION_ARRIVAL: 'schedule:recordStationArrival',
     GET_STATION_LOGS: 'schedule:getStationLogs',
     GET_STATION_AFFECTED_PASSENGERS: 'schedule:getStationAffectedPassengers',
+    REVOKE_STATION_ABSENT: 'schedule:revokeStationAbsent',
+    GET_STATION_ABSENT_PASSENGERS: 'schedule:getStationAbsentPassengers',
   },
   RIDE_REQUEST: {
     GET_ALL: 'rideRequest:getAll',

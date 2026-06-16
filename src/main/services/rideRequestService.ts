@@ -106,7 +106,13 @@ export async function createRideRequest(data: {
 
     const validation = await validateEmployee(data.employeeId, data.direction);
     if (!validation.success || !validation.data?.valid) {
-      return { success: false, error: validation.data?.reason || '员工身份校验失败' };
+      let errMsg = validation.data?.reason || '员工身份校验失败';
+      const recentLogs = validation.data?.recentLogs;
+      if (recentLogs && recentLogs.length > 0) {
+        const reasons = recentLogs.map((l: any, i: number) => `${i + 1}. ${l.reason}（${l.created_at.substring(0, 16)}，扣${-l.score_change}分）`).join('\n');
+        errMsg += '\n\n最近扣分记录：\n' + reasons;
+      }
+      return { success: false, error: errMsg };
     }
 
     const existing = db.prepare(
@@ -197,7 +203,13 @@ export async function rescheduleRideRequest(requestId: number, data: {
 
     const validation = await validateEmployee(req.employee_id, data.direction);
     if (!validation.success || !validation.data?.valid) {
-      return { success: false, error: validation.data?.reason || '员工身份校验失败' };
+      let errMsg = validation.data?.reason || '员工身份校验失败';
+      const recentLogs = validation.data?.recentLogs;
+      if (recentLogs && recentLogs.length > 0) {
+        const reasons = recentLogs.map((l: any, i: number) => `${i + 1}. ${l.reason}（${l.created_at.substring(0, 16)}，扣${-l.score_change}分）`).join('\n');
+        errMsg += '\n\n最近扣分记录：\n' + reasons;
+      }
+      return { success: false, error: errMsg };
     }
 
     const otherSameDay = db.prepare(

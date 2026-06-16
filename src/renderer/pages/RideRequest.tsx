@@ -12,8 +12,13 @@ import {
   Card,
   Descriptions,
   InputNumber,
+  Tabs,
+  Statistic,
+  Row,
+  Col,
+  Progress,
 } from 'antd';
-import { PlusOutlined, QrcodeOutlined, CloseOutlined, CheckOutlined, SwapOutlined, ScheduleOutlined } from '@ant-design/icons';
+import { PlusOutlined, QrcodeOutlined, CloseOutlined, CheckOutlined, SwapOutlined, ScheduleOutlined, UserOutlined, EyeOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { rideRequestApi, employeeApi, routeApi } from '../api';
 import type { RideRequest, Employee, Route } from '../../shared/types';
@@ -69,6 +74,9 @@ const RideRequestPage: React.FC<RideRequestPageProps> = ({ onRefreshAlerts }) =>
   const [rescheduleDirection, setRescheduleDirection] = useState<string>('to_company');
   const [rescheduleRouteId, setRescheduleRouteId] = useState<number | null>(null);
 
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [profileData, setProfileData] = useState<any>(null);
+
   const loadData = useCallback(async () => {
     setLoading(true);
     try {
@@ -105,6 +113,16 @@ const RideRequestPage: React.FC<RideRequestPageProps> = ({ onRefreshAlerts }) =>
   const handleRouteChange = (routeId: number) => {
     setSelectedRouteId(routeId);
     form.setFieldsValue({ stationId: undefined, rideTime: undefined });
+  };
+
+  const handleOpenProfile = async (employeeId: number) => {
+    try {
+      const data = await employeeApi.getCommutingProfile(employeeId);
+      setProfileData(data);
+      setProfileOpen(true);
+    } catch (err: any) {
+      message.error(err.message);
+    }
   };
 
   const handleSubmit = async (values: any) => {
@@ -252,7 +270,15 @@ const RideRequestPage: React.FC<RideRequestPageProps> = ({ onRefreshAlerts }) =>
       title: '员工',
       dataIndex: 'employeeId',
       key: 'employeeId',
-      render: (id: number) => employees.find((e) => e.id === id)?.name || '-',
+      render: (id: number) => {
+        const emp = employees.find((e) => e.id === id);
+        if (!emp) return '-';
+        return (
+          <Button type="link" size="small" style={{ padding: 0 }} onClick={() => handleOpenProfile(id)}>
+            <UserOutlined /> {emp.name}
+          </Button>
+        );
+      },
     },
     {
       title: '部门',
@@ -537,6 +563,158 @@ const RideRequestPage: React.FC<RideRequestPageProps> = ({ onRefreshAlerts }) =>
               { title: '申请时间', dataIndex: 'created_at', key: 'ct' },
             ]}
           />
+        )}
+      </Modal>
+
+      <Modal
+        title={`员工通勤档案 - ${profileData?.employee?.name || ''}`}
+        open={profileOpen}
+        onCancel={() => { setProfileOpen(false); setProfileData(null); }}
+        footer={null}
+        width={900}
+        style={{ maxHeight: '80vh', overflow: 'auto' }}
+      >
+        {profileData && (
+          <div>
+            <Card size="small" style={{ marginBottom: 16 }}>
+              <Row gutter={16}>
+                <Col span={6}>
+                  <Statistic title="信用分" value={profileData.employee.creditScore} prefix={<UserOutlined />} valueStyle={{ color: profileData.employee.creditScore >= 60 ? '#52c41a' : '#ff4d4f' }} />
+                  <Progress percent={profileData.employee.creditScore} status={profileData.employee.creditScore >= 60 ? 'normal' : 'exception'} style={{ marginTop: 8 }} />
+                </Col>
+                <Col span={3}>
+                  <Statistic title="总申请" value={profileData.stats.totalRequests} />
+                </Col>
+                <Col span={3}>
+                  <Statistic title="通过" value={profileData.stats.approvedCount} valueStyle={{ color: '#52c41a' }} />
+                </Col>
+                <Col span={3}>
+                  <Statistic title="未到" value={profileData.stats.noShowCount} valueStyle={{ color: '#ff4d4f' }} />
+                </Col>
+                <Col span={3}>
+                  <Statistic title="取消" value={profileData.stats.cancelledCount} />
+                </Col>
+                <Col span={3}>
+                  <Statistic title="30天未到" value={profileData.stats.last30DaysNoShow} valueStyle={{ color: profileData.stats.last30DaysNoShow > 0 ? '#faad14' : undefined }} />
+                </Col>
+                <Col span={3}>
+                  <Statistic title="改签" value={profileData.stats.rescheduleCount} />
+                </Col>
+              </Row>
+            </Card>
+
+            <Descriptions size="small" column={3} bordered style={{ marginBottom: 16 }}>
+              <Descriptions.Item label="工号">{profileData.employee.employeeNo}</Descriptions.Item>
+              <Descriptions.Item label="姓名">{profileData.employee.name}</Descriptions.Item>
+              <Descriptions.Item label="部门">{profileData.employee.department}</Descriptions.Item>
+              <Descriptions.Item label="职位">{profileData.employee.position}</Descriptions.Item>
+              <Descriptions.Item label="手机">{profileData.employee.phone}</Descriptions.Item>
+              <Descriptions.Item label="状态">
+                <Tag color={profileData.employee.status === 'active' ? 'green' : 'default'}>
+                  {profileData.employee.status === 'active' ? '在职' : '离职'}
+                </Tag>
+              </Descriptions.Item>
+            </Descriptions>
+
+            <Tabs
+              defaultActiveKey="requests"
+              items={[
+                {
+                  key: 'requests',
+                  label: '最近申请记录',
+                  children: (
+                    <Table
+                      size="small"
+                      dataSource={profileData.recentRequests}
+                      rowKey="id"
+                      pagination={{ pageSize: 5 }}
+                      columns={[
+                        { title: '申请编号', dataIndex: 'request_no', key: 'no' },
+                        { title: '班次', dataIndex: 'schedule_no', key: 'sch' },
+                        { title: '路线', dataIndex: 'route_name', key: 'rt' },
+                        { title: '站点', dataIndex: 'station_name', key: 'st' },
+                        { title: '日期', dataIndex: 'ride_date', key: 'dt' },
+                        {
+                          title: '状态',
+                          dataIndex: 'status',
+                          key: 's',
+                          render: (v: string) => <Tag color={statusColors[v] || 'default'}>{statusLabels[v] || v}</Tag>,
+                        },
+                        {
+                          title: '乘车凭证',
+                          dataIndex: 'ticket_code',
+                          key: 'tc',
+                          render: (v: string) => v ? <Tag color="cyan">已生成</Tag> : '-',
+                        },
+                      ]}
+                    />
+                  ),
+                },
+                {
+                  key: 'noShows',
+                  label: '未乘车记录',
+                  children: (
+                    profileData.recentNoShows.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: 40, color: '#52c41a' }}>
+                        <CheckOutlined style={{ fontSize: 32, display: 'block', marginBottom: 8 }} />
+                        暂无未乘车记录
+                      </div>
+                    ) : (
+                      <Table
+                        size="small"
+                        dataSource={profileData.recentNoShows}
+                        rowKey="id"
+                        pagination={{ pageSize: 5 }}
+                        columns={[
+                          { title: '记录编号', dataIndex: 'id', key: 'id' },
+                          { title: '班次', dataIndex: 'schedule_no', key: 'sch' },
+                          { title: '站点', dataIndex: 'station_name', key: 'st' },
+                          {
+                            title: '状态',
+                            key: 'revoked',
+                            render: (_: any, r: any) => r.revoked === 1 ? <Tag color="default">已撤销</Tag> : <Tag color="red">未乘车</Tag>,
+                          },
+                          { title: '记录时间', dataIndex: 'created_at', key: 'ct' },
+                        ]}
+                      />
+                    )
+                  ),
+                },
+                {
+                  key: 'creditLogs',
+                  label: '信用分历史',
+                  children: (
+                    profileData.recentCreditLogs.length === 0 ? (
+                      <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无信用分变更记录</div>
+                    ) : (
+                      <Table
+                        size="small"
+                        dataSource={profileData.recentCreditLogs}
+                        rowKey="id"
+                        pagination={{ pageSize: 5 }}
+                        columns={[
+                          { title: '时间', dataIndex: 'created_at', key: 'ct', width: 160 },
+                          {
+                            title: '变更',
+                            dataIndex: 'score_change',
+                            key: 'sc',
+                            width: 80,
+                            render: (v: number) => (
+                              <span style={{ color: v > 0 ? '#52c41a' : '#ff4d4f', fontWeight: 600 }}>
+                                {v > 0 ? '+' : ''}{v}
+                              </span>
+                            ),
+                          },
+                          { title: '新分数', dataIndex: 'new_score', key: 'ns', width: 80 },
+                          { title: '原因', dataIndex: 'reason', key: 'r' },
+                        ]}
+                      />
+                    )
+                  ),
+                },
+              ]}
+            />
+          </div>
         )}
       </Modal>
 

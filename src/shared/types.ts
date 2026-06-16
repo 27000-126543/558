@@ -188,4 +188,58 @@ export interface ApiResponse<T> {
   warning?: string;
   details?: any;
   schedule?: any;
+  promoted?: any[];
+  newAlert?: any;
+  creditScore?: number;
+}
+
+export interface StationAbsentRecord {
+  id: number;
+  scheduleId: number;
+  stationLogId: number;
+  stationId: number;
+  employeeId: number;
+  requestId: number;
+  revoked: boolean;
+  revokedAt?: string;
+  createdAt: string;
+  employeeName?: string;
+  employeeNo?: string;
+  department?: string;
+}
+
+export interface CreditScoreLog {
+  id: number;
+  employeeId: number;
+  scoreChange: number;
+  newScore: number;
+  reason: string;
+  relatedType?: string;
+  relatedId?: number;
+  createdAt: string;
+}
+
+export interface EmployeeCommutingProfile {
+  employee: {
+    id: number;
+    employeeNo: string;
+    name: string;
+    department: string;
+    position: string;
+    phone: string;
+    creditScore: number;
+    status: string;
+  };
+  recentRequests: any[];
+  recentNoShows: StationAbsentRecord[];
+  recentCreditLogs: CreditScoreLog[];
+  stats: {
+    totalRequests: number;
+    approvedCount: number;
+    cancelledCount: number;
+    noShowCount: number;
+    rescheduleCount: number;
+    waitlistCount: number;
+    last30DaysNoShow: number;
+  };
 }

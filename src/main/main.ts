@@ -98,6 +98,16 @@ function registerIpcHandlers() {
   ipcMain.handle(IPC.SCHEDULE.GET_STATION_AFFECTED_PASSENGERS, async (_e, sid: number, stid: number) =>
     scheduleService.getStationAffectedPassengers(sid, stid)
   );
+  ipcMain.handle(IPC.SCHEDULE.REVOKE_STATION_ABSENT, async (_e, recordId: number) =>
+    scheduleService.revokeStationAbsent(recordId)
+  );
+  ipcMain.handle(IPC.SCHEDULE.GET_STATION_ABSENT_PASSENGERS, async (_e, logId: number) =>
+    scheduleService.getStationAbsentPassengers(logId)
+  );
+
+  ipcMain.handle(IPC.EMPLOYEE.GET_COMMUTING_PROFILE, async (_e, employeeId: number) =>
+    employeeService.getEmployeeCommutingProfile(employeeId)
+  );
 
   ipcMain.handle(IPC.RIDE_REQUEST.GET_ALL, async () => rideRequestService.getAllRideRequests());
   ipcMain.handle(IPC.RIDE_REQUEST.GET_BY_EMPLOYEE, async (_e, id: number) => rideRequestService.getRideRequestsByEmployee(id));

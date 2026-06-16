@@ -9,7 +9,7 @@ import {
   TeamOutlined,
 } from '@ant-design/icons';
 import ReactECharts from 'echarts-for-react';
-import { dashboardApi, reportApi } from '../api';
+import { dashboardApi, reportApi, scheduleApi } from '../api';
 import type { Schedule } from '../../shared/types';
 
 interface Props {
@@ -37,6 +37,41 @@ const Dashboard: React.FC<Props> = ({ onRefresh }) => {
   const [stats, setStats] = useState<any>({});
   const [realtimeData, setRealtimeData] = useState<any>({ schedules: [] });
   const [chartData, setChartData] = useState<any[]>([]);
+  const [runSummaries, setRunSummaries] = useState<Record<number, any>>({});
+
+  const loadRunSummaries = async (scheduleIds: number[]) => {
+    const summaries: Record<number, any> = {};
+    for (const sid of scheduleIds) {
+      try {
+        const logs = await scheduleApi.getStationLogs(sid);
+        const finishedLogs = logs.filter((l: any) => l.status === 'completed');
+        const totalBoarded = finishedLogs.reduce((s: number, l: any) => s + (l.actual_boarded || 0), 0);
+        const totalAbsent = finishedLogs.reduce((s: number, l: any) => s + (l.actual_absent || 0), 0);
+        const hasDelay = finishedLogs.some((l: any) => {
+          if (l.actual_arrival_time && l.planned_arrival_time) {
+            const actual = new Date(`2000-01-01 ${l.actual_arrival_time}`).getTime();
+            const planned = new Date(`2000-01-01 ${l.planned_arrival_time}`).getTime();
+            return actual - planned > 5 * 60 * 1000;
+          }
+          return false;
+        });
+        const currentStation = logs.find((l: any) => l.status === 'in_progress') ||
+          logs.filter((l: any) => l.status === 'completed').sort((a: any, b: any) => (b.actual_arrival_time || '').localeCompare(a.actual_arrival_time || ''))[0] ||
+          logs[0];
+        summaries[sid] = {
+          totalBoarded,
+          totalAbsent,
+          hasDelay,
+          currentStation: currentStation?.station_name || '-',
+          totalStations: logs.length,
+          completedStations: finishedLogs.length,
+        };
+      } catch (e) {
+        summaries[sid] = { totalBoarded: 0, totalAbsent: 0, hasDelay: false, currentStation: '-', totalStations: 0, completedStations: 0 };
+      }
+    }
+    setRunSummaries(summaries);
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -49,6 +84,9 @@ const Dashboard: React.FC<Props> = ({ onRefresh }) => {
       setStats(s);
       setRealtimeData(r);
       setChartData(c);
+      if (r.schedules && r.schedules.length > 0) {
+        await loadRunSummaries(r.schedules.map((s: any) => s.id));
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -66,6 +104,49 @@ const Dashboard: React.FC<Props> = ({ onRefresh }) => {
   const scheduleColumns = [
     { title: '班次编号', dataIndex: 'schedule_no', key: 'schedule_no' },
     { title: '路线', dataIndex: 'route_name', key: 'route_name' },
+    {
+      title: '当前站点',
+      key: 'current',
+      width: 100,
+      render: (_: any, r: any) => {
+        const summary = runSummaries[r.id];
+        if (!summary) return '-';
+        return (
+          <div>
+            <div style={{ fontWeight: 500 }}>{summary.currentStation}</div>
+            <div style={{ fontSize: 11, color: '#999' }}>{summary.completedStations}/{summary.totalStations}站</div>
+          </div>
+        );
+      },
+    },
+    {
+      title: '已上车',
+      key: 'boarded',
+      width: 70,
+      render: (_: any, r: any) => {
+        const summary = runSummaries[r.id];
+        return summary ? <Tag color="green">{summary.totalBoarded}</Tag> : '-';
+      },
+    },
+    {
+      title: '未到',
+      key: 'absent',
+      width: 70,
+      render: (_: any, r: any) => {
+        const summary = runSummaries[r.id];
+        return summary ? <Tag color="red">{summary.totalAbsent}</Tag> : '-';
+      },
+    },
+    {
+      title: '站点延误',
+      key: 'delay',
+      width: 90,
+      render: (_: any, r: any) => {
+        const summary = runSummaries[r.id];
+        if (!summary) return '-';
+        return summary.hasDelay ? <Tag color="orange">有延误</Tag> : <Tag color="green">准点</Tag>;
+      },
+    },
     { title: '车牌', dataIndex: 'plate_no', key: 'plate_no' },
     { title: '司机', dataIndex: 'driver_name', key: 'driver_name' },
     { title: '发车时间', dataIndex: 'departure_time', key: 'departure_time' },
