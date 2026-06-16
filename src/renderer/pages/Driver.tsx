@@ -11,8 +11,6 @@ import {
   Card,
   Tag,
   Tabs,
-  DatePicker,
-  InputNumber,
   Descriptions,
   Divider,
 } from 'antd';

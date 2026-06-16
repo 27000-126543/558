@@ -121,7 +121,7 @@ export async function deleteSchedule(id: number): Promise<ApiResponse<boolean>> 
   }
 }
 
-export async function getSchedulePassengers(scheduleId: number): Promise<ApiResponse<any[]>> {
+export async function getSchedulePassengers(scheduleId: number): Promise<ApiResponse<any>> {
   try {
     const db = await getDb();
     const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(scheduleId) as any;

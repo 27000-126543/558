@@ -16,7 +16,6 @@ import {
   Alert,
   Steps,
   InputNumber,
-  Divider,
 } from 'antd';
 import { PlusOutlined, EyeOutlined, EditOutlined, PlayCircleOutlined, CheckCircleOutlined, WarningOutlined, CheckOutlined, EnvironmentOutlined, TeamOutlined, UserOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -568,7 +567,12 @@ const SchedulePage: React.FC<SchedulePageProps> = ({ onRefreshAlerts }) => {
         footer={null}
         width={900}
       >
-        {stationLogs.length > 0 && (
+        {stationLogs.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>
+            <EnvironmentOutlined style={{ fontSize: 32, marginBottom: 8, display: 'block' }} />
+            暂无站点数据，请确认该班次已关联路线和站点
+          </div>
+        ) : (
           <>
             <Card size="small" style={{ marginBottom: 16 }} title="站点进度">
               <Steps
