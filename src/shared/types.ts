@@ -62,6 +62,10 @@ export interface Schedule {
   actualDepartureTime?: string;
   actualArrivalTime?: string;
   passengerCount: number;
+  passengerConfirmed?: boolean;
+  passengerConfirmedAt?: string;
+  currentStationId?: number;
+  currentStationSeq?: number;
   createdAt: string;
 }
 
@@ -75,10 +79,14 @@ export interface RideRequest {
   rideDate: string;
   rideTime: string;
   direction: 'to_company' | 'from_company';
-  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'completed';
+  status: 'pending' | 'approved' | 'rejected' | 'cancelled' | 'completed' | 'waitlist' | 'rescheduled';
   seatNo?: number;
   ticketCode?: string;
   rejectionReason?: string;
+  isWaitlist?: boolean;
+  waitlistOrder?: number;
+  rescheduledFrom?: number;
+  rescheduleCount?: number;
   createdAt: string;
 }
 
@@ -126,10 +134,23 @@ export interface DriverAdjustment {
   id: number;
   scheduleId: number;
   driverId: number;
+  oldDriverId?: number;
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
   approver?: string;
   approvedAt?: string;
+  rejectionReason?: string;
+  createdAt: string;
+}
+
+export interface Alert {
+  id: number;
+  type: 'delay' | 'maintenance' | 'stock' | 'credit' | 'station_delay' | 'waitlist' | 'info';
+  level: 'warning' | 'danger' | 'info';
+  title: string;
+  message: string;
+  relatedId?: number;
+  isRead: boolean;
   createdAt: string;
 }
 
@@ -159,20 +180,12 @@ export interface VehicleUtilization {
   utilizationRate: number;
 }
 
-export interface Alert {
-  id: number;
-  type: 'delay' | 'maintenance' | 'stock' | 'credit';
-  level: 'warning' | 'danger' | 'info';
-  title: string;
-  message: string;
-  relatedId?: number;
-  isRead: boolean;
-  createdAt: string;
-}
-
 export interface ApiResponse<T> {
   success: boolean;
   data?: T;
   message?: string;
   error?: string;
+  warning?: string;
+  details?: any;
+  schedule?: any;
 }

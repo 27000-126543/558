@@ -91,6 +91,13 @@ function registerIpcHandlers() {
   ipcMain.handle(IPC.SCHEDULE.GET_PASSENGERS, async (_e, id: number) => scheduleService.getSchedulePassengers(id));
   ipcMain.handle(IPC.SCHEDULE.HANDLE_DELAY, async (_e, id: number) => scheduleService.handleDelay(id));
   ipcMain.handle(IPC.SCHEDULE.CONFIRM_PASSENGERS, async (_e, id: number) => scheduleService.confirmPassengers(id));
+  ipcMain.handle(IPC.SCHEDULE.RECORD_STATION_ARRIVAL, async (_e, sid: number, logId: number, data: any) =>
+    scheduleService.recordStationArrival(sid, logId, data)
+  );
+  ipcMain.handle(IPC.SCHEDULE.GET_STATION_LOGS, async (_e, id: number) => scheduleService.getStationLogs(id));
+  ipcMain.handle(IPC.SCHEDULE.GET_STATION_AFFECTED_PASSENGERS, async (_e, sid: number, stid: number) =>
+    scheduleService.getStationAffectedPassengers(sid, stid)
+  );
 
   ipcMain.handle(IPC.RIDE_REQUEST.GET_ALL, async () => rideRequestService.getAllRideRequests());
   ipcMain.handle(IPC.RIDE_REQUEST.GET_BY_EMPLOYEE, async (_e, id: number) => rideRequestService.getRideRequestsByEmployee(id));
@@ -98,6 +105,13 @@ function registerIpcHandlers() {
   ipcMain.handle(IPC.RIDE_REQUEST.UPDATE, async (_e, id: number, data: any) => rideRequestService.updateRideRequest(id, data));
   ipcMain.handle(IPC.RIDE_REQUEST.CANCEL, async (_e, id: number) => rideRequestService.cancelRideRequest(id));
   ipcMain.handle(IPC.RIDE_REQUEST.ASSIGN_SEAT, async (_e, id: number) => rideRequestService.assignSeat(id));
+  ipcMain.handle(IPC.RIDE_REQUEST.RESCHEDULE, async (_e, id: number, data: any) => rideRequestService.rescheduleRideRequest(id, data));
+  ipcMain.handle(IPC.RIDE_REQUEST.GET_WAITLIST, async (_e, routeId?: number, rideDate?: string, direction?: string) =>
+    rideRequestService.getWaitlist(routeId, rideDate, direction)
+  );
+  ipcMain.handle(IPC.RIDE_REQUEST.PROMOTE_WAITLIST, async (_e, scheduleId: number, limit?: number) =>
+    rideRequestService.promoteWaitlist(scheduleId, limit)
+  );
 
   ipcMain.handle(IPC.MAINTENANCE.GET_ALL, async () => maintenanceService.getAllWorkOrders());
   ipcMain.handle(IPC.MAINTENANCE.CREATE, async (_e, data: any) => maintenanceService.createWorkOrder(data));
@@ -116,7 +130,8 @@ function registerIpcHandlers() {
   ipcMain.handle(IPC.DRIVER_ADJUSTMENT.GET_ALL, async () => maintenanceService.getAllAdjustments());
   ipcMain.handle(IPC.DRIVER_ADJUSTMENT.CREATE, async (_e, data: any) => maintenanceService.createAdjustment(data));
   ipcMain.handle(IPC.DRIVER_ADJUSTMENT.APPROVE, async (_e, id: number, approver: string) => maintenanceService.approveAdjustment(id, approver));
-  ipcMain.handle(IPC.DRIVER_ADJUSTMENT.REJECT, async (_e, id: number, approver: string) => maintenanceService.rejectAdjustment(id, approver));
+  ipcMain.handle(IPC.DRIVER_ADJUSTMENT.REJECT, async (_e, id: number, approver: string, reason?: string) => maintenanceService.rejectAdjustment(id, approver, reason));
+  ipcMain.handle(IPC.DRIVER_ADJUSTMENT.GET_BY_ID, async (_e, id: number) => maintenanceService.getAdjustmentById(id));
 
   ipcMain.handle(IPC.REPORT.GENERATE_MONTHLY, async (_e, month: string) => reportService.generateMonthlyReport(month));
   ipcMain.handle(IPC.REPORT.GET_HISTORY, async () => reportService.getReportHistory());

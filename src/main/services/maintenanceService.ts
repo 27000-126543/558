@@ -45,10 +45,12 @@ function rowToAdjustment(row: any): DriverAdjustment {
     id: row.id,
     scheduleId: row.schedule_id,
     driverId: row.driver_id,
+    oldDriverId: row.old_driver_id,
     reason: row.reason,
     status: row.status,
     approver: row.approver,
     approvedAt: row.approved_at,
+    rejectionReason: row.rejection_reason,
     createdAt: row.created_at,
   };
 }
@@ -251,9 +253,14 @@ export async function getAllAdjustments(): Promise<ApiResponse<DriverAdjustment[
 export async function createAdjustment(data: Omit<DriverAdjustment, 'id' | 'createdAt' | 'status' | 'approver' | 'approvedAt'>): Promise<ApiResponse<DriverAdjustment>> {
   try {
     const db = await getDb();
+    let oldDriverId: number | undefined = data.oldDriverId;
+    if (!oldDriverId) {
+      const schedule = db.prepare('SELECT driver_id FROM schedules WHERE id = ?').get(data.scheduleId) as any;
+      oldDriverId = schedule?.driver_id;
+    }
     const result = db.prepare(
-      'INSERT INTO driver_adjustments (schedule_id, driver_id, reason) VALUES (?, ?, ?)'
-    ).run(data.scheduleId, data.driverId, data.reason);
+      'INSERT INTO driver_adjustments (schedule_id, driver_id, old_driver_id, reason) VALUES (?, ?, ?, ?)'
+    ).run(data.scheduleId, data.driverId, oldDriverId || null, data.reason);
     const row = db.prepare('SELECT * FROM driver_adjustments WHERE id = ?').get(result.lastInsertRowid);
     return { success: true, data: rowToAdjustment(row) };
   } catch (err: any) {
@@ -261,7 +268,7 @@ export async function createAdjustment(data: Omit<DriverAdjustment, 'id' | 'crea
   }
 }
 
-export async function approveAdjustment(id: number, approver: string): Promise<ApiResponse<DriverAdjustment>> {
+export async function approveAdjustment(id: number, approver: string): Promise<ApiResponse<any>> {
   try {
     const db = await getDb();
     const adj = db.prepare('SELECT * FROM driver_adjustments WHERE id = ?').get(id);
@@ -272,20 +279,60 @@ export async function approveAdjustment(id: number, approver: string): Promise<A
         .run(approver, id);
     });
     tx();
-    const row = db.prepare('SELECT * FROM driver_adjustments WHERE id = ?').get(id);
-    return { success: true, data: rowToAdjustment(row) };
+    const updatedAdj = db.prepare(
+      `SELECT da.*, s.schedule_no, s.date, s.departure_time, r.route_name,
+              new_d.name as new_driver_name, old_d.name as old_driver_name
+       FROM driver_adjustments da
+       LEFT JOIN schedules s ON da.schedule_id = s.id
+       LEFT JOIN routes r ON s.route_id = r.id
+       LEFT JOIN drivers new_d ON da.driver_id = new_d.id
+       LEFT JOIN drivers old_d ON da.old_driver_id = old_d.id
+       WHERE da.id = ?`
+    ).get(id);
+    return { success: true, data: rowToAdjustment(updatedAdj), details: updatedAdj };
   } catch (err: any) {
     return { success: false, error: err.message };
   }
 }
 
-export async function rejectAdjustment(id: number, approver: string): Promise<ApiResponse<DriverAdjustment>> {
+export async function rejectAdjustment(id: number, approver: string, rejectionReason?: string): Promise<ApiResponse<any>> {
   try {
     const db = await getDb();
-    db.prepare("UPDATE driver_adjustments SET status = 'rejected', approver = ?, approved_at = datetime('now', 'localtime') WHERE id = ?")
-      .run(approver, id);
-    const row = db.prepare('SELECT * FROM driver_adjustments WHERE id = ?').get(id);
-    return { success: true, data: rowToAdjustment(row) };
+    db.prepare(
+      "UPDATE driver_adjustments SET status = 'rejected', approver = ?, approved_at = datetime('now', 'localtime'), rejection_reason = ? WHERE id = ?"
+    ).run(approver, rejectionReason || '审批未通过', id);
+    const row = db.prepare(
+      `SELECT da.*, s.schedule_no, s.date, s.departure_time, r.route_name,
+              new_d.name as new_driver_name, old_d.name as old_driver_name
+       FROM driver_adjustments da
+       LEFT JOIN schedules s ON da.schedule_id = s.id
+       LEFT JOIN routes r ON s.route_id = r.id
+       LEFT JOIN drivers new_d ON da.driver_id = new_d.id
+       LEFT JOIN drivers old_d ON da.old_driver_id = old_d.id
+       WHERE da.id = ?`
+    ).get(id);
+    return { success: true, data: rowToAdjustment(row), details: row };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function getAdjustmentById(id: number): Promise<ApiResponse<any>> {
+  try {
+    const db = await getDb();
+    const row = db.prepare(
+      `SELECT da.*, s.schedule_no, s.date, s.departure_time, r.route_name,
+              new_d.name as new_driver_name, new_d.phone as new_driver_phone,
+              old_d.name as old_driver_name, old_d.phone as old_driver_phone
+       FROM driver_adjustments da
+       LEFT JOIN schedules s ON da.schedule_id = s.id
+       LEFT JOIN routes r ON s.route_id = r.id
+       LEFT JOIN drivers new_d ON da.driver_id = new_d.id
+       LEFT JOIN drivers old_d ON da.old_driver_id = old_d.id
+       WHERE da.id = ?`
+    ).get(id);
+    if (!row) return { success: false, error: '换班申请不存在' };
+    return { success: true, data: { ...rowToAdjustment(row), ...row } };
   } catch (err: any) {
     return { success: false, error: err.message };
   }

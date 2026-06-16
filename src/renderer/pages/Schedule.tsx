@@ -14,8 +14,11 @@ import {
   Descriptions,
   Input,
   Alert,
+  Steps,
+  InputNumber,
+  Divider,
 } from 'antd';
-import { PlusOutlined, EyeOutlined, EditOutlined, PlayCircleOutlined, CheckCircleOutlined, WarningOutlined, CheckOutlined } from '@ant-design/icons';
+import { PlusOutlined, EyeOutlined, EditOutlined, PlayCircleOutlined, CheckCircleOutlined, WarningOutlined, CheckOutlined, EnvironmentOutlined, TeamOutlined, UserOutlined, ClockCircleOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { scheduleApi, routeApi, vehicleApi, driverApi, adjustmentApi } from '../api';
 import type { Schedule, Route, Vehicle, Driver } from '../../shared/types';
@@ -36,7 +39,13 @@ const statusLabels: Record<string, string> = {
   delayed: '延误',
 };
 
-const SchedulePage: React.FC = () => {
+const { Step } = Steps;
+
+interface SchedulePageProps {
+  onRefreshAlerts?: () => void;
+}
+
+const SchedulePage: React.FC<SchedulePageProps> = ({ onRefreshAlerts }) => {
   const [loading, setLoading] = useState(false);
   const [schedules, setSchedules] = useState<Schedule[]>([]);
   const [routes, setRoutes] = useState<Route[]>([]);
@@ -51,7 +60,15 @@ const SchedulePage: React.FC = () => {
   const [delayResult, setDelayResult] = useState<any>(null);
   const [delayModalOpen, setDelayModalOpen] = useState(false);
   const [passengerConfirmed, setPassengerConfirmed] = useState(false);
+  const [passengerConfirmedAt, setPassengerConfirmedAt] = useState<string>('');
   const [confirmingPassengers, setConfirmingPassengers] = useState(false);
+  const [tripTrackOpen, setTripTrackOpen] = useState(false);
+  const [stationLogs, setStationLogs] = useState<any[]>([]);
+  const [stationForm] = Form.useForm();
+  const [editingLogId, setEditingLogId] = useState<number | null>(null);
+  const [stationAffectedOpen, setStationAffectedOpen] = useState(false);
+  const [affectedPassengers, setAffectedPassengers] = useState<any[]>([]);
+  const [viewingStationId, setViewingStationId] = useState<number | null>(null);
   const [form] = Form.useForm();
   const [adjustForm] = Form.useForm();
 
@@ -78,6 +95,11 @@ const SchedulePage: React.FC = () => {
   useEffect(() => {
     loadData();
   }, [loadData]);
+
+  const getRouteStations = (routeId: number) => {
+    const route = routes.find(r => r.id === routeId);
+    return route?.stations || [];
+  };
 
   const handleSubmit = async (values: any) => {
     try {
@@ -118,11 +140,14 @@ const SchedulePage: React.FC = () => {
 
   const handleViewPassengers = async (id: number) => {
     try {
-      const data = await scheduleApi.getPassengers(id);
-      setPassengers(data);
+      const resp = await scheduleApi.getPassengers(id);
+      setPassengers(resp?.passengers || []);
+      const confirmed = resp?.schedule?.passengerConfirmed === true;
+      const confirmedAt = resp?.schedule?.passengerConfirmedAt || '';
+      setPassengerConfirmed(confirmed);
+      setPassengerConfirmedAt(confirmedAt);
       const schedule = schedules.find((s) => s.id === id);
       setCurrentSchedule(schedule || null);
-      setPassengerConfirmed((schedule as any)?.passenger_confirmed === 1);
       setPassengerOpen(true);
     } catch (err: any) {
       message.error(err.message);
@@ -135,7 +160,10 @@ const SchedulePage: React.FC = () => {
     try {
       const result = await scheduleApi.confirmPassengers(currentSchedule.id);
       setPassengerConfirmed(true);
+      setPassengerConfirmedAt(result.confirmedAt);
       message.success(`乘客名单已确认，确认时间：${result.confirmedAt}`);
+      loadData();
+      if (onRefreshAlerts) onRefreshAlerts();
     } catch (err: any) {
       message.error(err.message);
     } finally {
@@ -153,6 +181,7 @@ const SchedulePage: React.FC = () => {
           setDelayResult(result);
           setDelayModalOpen(true);
           loadData();
+          if (onRefreshAlerts) onRefreshAlerts();
         } catch (err: any) {
           message.error(err.message);
         }
@@ -188,6 +217,77 @@ const SchedulePage: React.FC = () => {
     }
   };
 
+  const handleOpenTripTrack = async (record: Schedule) => {
+    setCurrentSchedule(record);
+    try {
+      const logs = await scheduleApi.getStationLogs(record.id);
+      setStationLogs(logs);
+      setTripTrackOpen(true);
+    } catch (err: any) {
+      message.error(err.message);
+    }
+  };
+
+  const handleOpenStationForm = (log: any) => {
+    setEditingLogId(log.id);
+    stationForm.setFieldsValue({
+      boardedCount: log.boarded_count || 0,
+      absentCount: log.absent_count || 0,
+      actualArrivalTime: log.actual_arrival_time ? dayjs(log.actual_arrival_time) : dayjs(),
+      actualDepartureTime: log.actual_departure_time ? dayjs(log.actual_departure_time) : dayjs().add(2, 'minute'),
+    });
+  };
+
+  const handleSubmitStationLog = async (values: any) => {
+    if (!currentSchedule || !editingLogId) return;
+    try {
+      const resp = await scheduleApi.recordStationArrival(
+        currentSchedule.id,
+        editingLogId,
+        {
+          actualArrivalTime: values.actualArrivalTime.format('YYYY-MM-DD HH:mm:ss'),
+          actualDepartureTime: values.actualDepartureTime?.format('YYYY-MM-DD HH:mm:ss'),
+          boardedCount: values.boardedCount || 0,
+          absentCount: values.absentCount || 0,
+        }
+      );
+      message.success('站点记录已保存');
+      if (resp?.newAlert && onRefreshAlerts) {
+        onRefreshAlerts();
+      }
+      setEditingLogId(null);
+      stationForm.resetFields();
+      const logs = await scheduleApi.getStationLogs(currentSchedule.id);
+      setStationLogs(logs);
+      loadData();
+    } catch (err: any) {
+      message.error(err.message);
+    }
+  };
+
+  const handleViewAffectedPassengers = async (stationId: number) => {
+    if (!currentSchedule) return;
+    setViewingStationId(stationId);
+    try {
+      const data = await scheduleApi.getStationAffectedPassengers(currentSchedule.id, stationId);
+      setAffectedPassengers(data);
+      setStationAffectedOpen(true);
+    } catch (err: any) {
+      message.error(err.message);
+    }
+  };
+
+  const getCurrentStationLabel = (sch: Schedule) => {
+    if (sch.status !== 'departed' && sch.status !== 'delayed') return null;
+    const seq = sch.currentStationSeq || 0;
+    if (seq === 0) return <Tag color="blue">刚发车</Tag>;
+    const stations = getRouteStations(sch.routeId);
+    const st = stations.find(s => s.sequence === seq);
+    return st ? (
+      <Tag color="blue" icon={<EnvironmentOutlined />}>{st.stationName}</Tag>
+    ) : null;
+  };
+
   const columns = [
     { title: '班次编号', dataIndex: 'scheduleNo', key: 'scheduleNo' },
     {
@@ -195,6 +295,11 @@ const SchedulePage: React.FC = () => {
       dataIndex: 'routeId',
       key: 'routeId',
       render: (id: number) => routes.find((r) => r.id === id)?.routeName || '-',
+    },
+    {
+      title: '当前站点',
+      key: 'currentStation',
+      render: (_: any, record: Schedule) => getCurrentStationLabel(record),
     },
     {
       title: '车辆',
@@ -221,10 +326,15 @@ const SchedulePage: React.FC = () => {
       title: '操作',
       key: 'action',
       render: (_: any, record: Schedule) => (
-        <Space size="small">
+        <Space size="small" wrap>
           <Button size="small" type="link" icon={<EyeOutlined />} onClick={() => handleViewPassengers(record.id)}>
             乘客名单
           </Button>
+          {(record.status === 'departed' || record.status === 'delayed') && (
+            <Button size="small" type="link" icon={<EnvironmentOutlined />} onClick={() => handleOpenTripTrack(record)}>
+              行程跟踪
+            </Button>
+          )}
           {record.status === 'pending' && (
             <>
               <Button size="small" type="link" icon={<EditOutlined />} onClick={() => handleEdit(record)}>
@@ -252,14 +362,6 @@ const SchedulePage: React.FC = () => {
           )}
           {record.status === 'departed' && (
             <>
-              <Button
-                size="small"
-                type="link"
-                icon={<CheckCircleOutlined />}
-                onClick={() => handleUpdateStatus(record.id, 'arrived')}
-              >
-                到达
-              </Button>
               <Button
                 size="small"
                 type="link"
@@ -339,11 +441,11 @@ const SchedulePage: React.FC = () => {
             type="success"
             showIcon
             icon={<CheckCircleOutlined />}
-            message="司机已确认乘客名单"
+            message={`司机已确认乘客名单${passengerConfirmedAt ? `（确认时间：${passengerConfirmedAt}）` : ''}`}
             style={{ marginBottom: 16 }}
           />
         )}
-        {passengers.length === 0 ? (
+        {(!passengers || passengers.length === 0) ? (
           <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无乘客</div>
         ) : (
           <Table
@@ -457,6 +559,130 @@ const SchedulePage: React.FC = () => {
             </Space>
           </Form.Item>
         </Form>
+      </Modal>
+
+      <Modal
+        title={`行程跟踪 - ${currentSchedule?.scheduleNo || ''}`}
+        open={tripTrackOpen}
+        onCancel={() => { setTripTrackOpen(false); setEditingLogId(null); stationForm.resetFields(); }}
+        footer={null}
+        width={900}
+      >
+        {stationLogs.length > 0 && (
+          <>
+            <Card size="small" style={{ marginBottom: 16 }} title="站点进度">
+              <Steps
+                direction="vertical"
+                size="small"
+                current={stationLogs.findIndex(s => !!s.actual_arrival_time) >= 0
+                  ? (stationLogs.filter(s => !!s.actual_arrival_time).length)
+                  : 0}
+                status="process"
+              >
+                {stationLogs.map(log => {
+                  const stTitle = (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <Space>
+                        <span style={{ fontWeight: 600 }}>{log.station_name}</span>
+                        {log.is_delayed ? <Tag color="red">晚到{log.delay_minutes}分钟</Tag> : null}
+                      </Space>
+                      <Space>
+                        <span style={{ color: '#999', fontSize: 12 }}>
+                          <ClockCircleOutlined /> 计划 {log.planned_arrival_time}
+                        </span>
+                        <Button
+                          type="link"
+                          size="small"
+                          onClick={() => handleOpenStationForm(log)}
+                        >
+                          {log.actual_arrival_time ? '编辑记录' : '记录到站'}
+                        </Button>
+                        {log.is_delayed === 1 && (
+                          <Button
+                            type="link"
+                            size="small"
+                            danger
+                            onClick={() => handleViewAffectedPassengers(log.station_id)}
+                          >
+                            影响乘客
+                          </Button>
+                        )}
+                      </Space>
+                    </div>
+                  );
+                  const stDesc = log.actual_arrival_time ? (
+                    <Space size="large" style={{ fontSize: 12, color: '#666' }}>
+                      <span><CheckCircleOutlined style={{ color: '#52c41a' }} /> 实际到达 {log.actual_arrival_time.substring(11, 16)}</span>
+                      {log.boarded_count !== undefined && log.boarded_count > 0 && (
+                        <span><TeamOutlined /> 上车 {log.boarded_count}人</span>
+                      )}
+                      {log.absent_count !== undefined && log.absent_count > 0 && (
+                        <span style={{ color: '#ff4d4f' }}><UserOutlined /> 未到 {log.absent_count}人</span>
+                      )}
+                    </Space>
+                  ) : (
+                    <span style={{ fontSize: 12, color: '#999' }}>未到达</span>
+                  );
+                  return <Step key={log.id} title={stTitle} description={stDesc} />;
+                })}
+              </Steps>
+            </Card>
+
+            {editingLogId && (
+              <Card size="small" title="编辑站点记录" type="inner" style={{ marginBottom: 16 }}>
+                <Form form={stationForm} layout="vertical" onFinish={handleSubmitStationLog}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    <Form.Item label="实际到达时间" name="actualArrivalTime" rules={[{ required: true }]}>
+                      <DatePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm" />
+                    </Form.Item>
+                    <Form.Item label="实际离开时间" name="actualDepartureTime">
+                      <DatePicker showTime style={{ width: '100%' }} format="YYYY-MM-DD HH:mm" />
+                    </Form.Item>
+                    <Form.Item label="上车人数" name="boardedCount">
+                      <InputNumber min={0} style={{ width: '100%' }} />
+                    </Form.Item>
+                    <Form.Item label="未到人数" name="absentCount">
+                      <InputNumber min={0} style={{ width: '100%' }} />
+                    </Form.Item>
+                  </div>
+                  <div style={{ textAlign: 'right' }}>
+                    <Space>
+                      <Button onClick={() => { setEditingLogId(null); stationForm.resetFields(); }}>取消</Button>
+                      <Button type="primary" htmlType="submit">保存</Button>
+                    </Space>
+                  </div>
+                </Form>
+              </Card>
+            )}
+          </>
+        )}
+      </Modal>
+
+      <Modal
+        title="受站点延误影响的乘客"
+        open={stationAffectedOpen}
+        onCancel={() => { setStationAffectedOpen(false); setViewingStationId(null); }}
+        footer={null}
+        width={700}
+      >
+        {affectedPassengers.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>该站点暂无乘客</div>
+        ) : (
+          <Table
+            size="small"
+            pagination={false}
+            rowKey="id"
+            columns={[
+              { title: '座位号', dataIndex: 'seat_no', key: 'seat', width: 80 },
+              { title: '员工编号', dataIndex: 'employee_no', key: 'no' },
+              { title: '姓名', dataIndex: 'employee_name', key: 'name' },
+              { title: '部门', dataIndex: 'department', key: 'dept' },
+              { title: '联系电话', dataIndex: 'phone', key: 'phone' },
+              { title: '站点', dataIndex: 'station_name', key: 'station' },
+            ]}
+            dataSource={affectedPassengers}
+          />
+        )}
       </Modal>
     </div>
   );

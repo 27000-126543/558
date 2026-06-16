@@ -64,11 +64,11 @@ const App: React.FC = () => {
   const renderContent = () => {
     switch (selectedKey) {
       case 'dashboard': return <Dashboard onRefresh={loadAlerts} />;
-      case 'rideRequest': return <RideRequest />;
-      case 'schedule': return <Schedule />;
+      case 'rideRequest': return <RideRequest onRefreshAlerts={loadAlerts} />;
+      case 'schedule': return <Schedule onRefreshAlerts={loadAlerts} />;
       case 'route': return <Route />;
       case 'vehicle': return <Vehicle />;
-      case 'driver': return <Driver />;
+      case 'driver': return <Driver onRefreshAlerts={loadAlerts} />;
       case 'employee': return <Employee />;
       case 'maintenance': return <Maintenance />;
       case 'report': return <Report />;

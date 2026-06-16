@@ -37,6 +37,9 @@ const IPC = {
     GET_PASSENGERS: 'schedule:getPassengers',
     HANDLE_DELAY: 'schedule:handleDelay',
     CONFIRM_PASSENGERS: 'schedule:confirmPassengers',
+    RECORD_STATION_ARRIVAL: 'schedule:recordStationArrival',
+    GET_STATION_LOGS: 'schedule:getStationLogs',
+    GET_STATION_AFFECTED_PASSENGERS: 'schedule:getStationAffectedPassengers',
   },
   RIDE_REQUEST: {
     GET_ALL: 'rideRequest:getAll',
@@ -45,12 +48,16 @@ const IPC = {
     UPDATE: 'rideRequest:update',
     CANCEL: 'rideRequest:cancel',
     ASSIGN_SEAT: 'rideRequest:assignSeat',
+    RESCHEDULE: 'rideRequest:reschedule',
+    GET_WAITLIST: 'rideRequest:getWaitlist',
+    PROMOTE_WAITLIST: 'rideRequest:promoteWaitlist',
   },
-  MAINTENANCE: {
-    GET_ALL: 'maintenance:getAll',
-    CREATE: 'maintenance:create',
-    UPDATE: 'maintenance:update',
-    COMPLETE: 'maintenance:complete',
+  DRIVER_ADJUSTMENT: {
+    GET_ALL: 'driverAdjustment:getAll',
+    CREATE: 'driverAdjustment:create',
+    APPROVE: 'driverAdjustment:approve',
+    REJECT: 'driverAdjustment:reject',
+    GET_BY_ID: 'driverAdjustment:getById',
   },
   SPARE_PART: {
     GET_ALL: 'sparePart:getAll',
@@ -58,16 +65,16 @@ const IPC = {
     UPDATE: 'sparePart:update',
     GET_LOW_STOCK: 'sparePart:getLowStock',
   },
+  MAINTENANCE: {
+    GET_ALL: 'maintenance:getAll',
+    CREATE: 'maintenance:create',
+    UPDATE: 'maintenance:update',
+    COMPLETE: 'maintenance:complete',
+  },
   MAINTENANCE_TEAM: {
     GET_ALL: 'maintenanceTeam:getAll',
     CREATE: 'maintenanceTeam:create',
     UPDATE: 'maintenanceTeam:update',
-  },
-  DRIVER_ADJUSTMENT: {
-    GET_ALL: 'driverAdjustment:getAll',
-    CREATE: 'driverAdjustment:create',
-    APPROVE: 'driverAdjustment:approve',
-    REJECT: 'driverAdjustment:reject',
   },
   REPORT: {
     GENERATE_MONTHLY: 'report:generateMonthly',

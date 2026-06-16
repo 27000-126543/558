@@ -208,7 +208,26 @@ function initTables(database: Database) {
       passenger_count INTEGER DEFAULT 0,
       passenger_confirmed INTEGER DEFAULT 0,
       passenger_confirmed_at TEXT,
+      current_station_id INTEGER,
+      current_station_seq INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    );
+
+    CREATE TABLE IF NOT EXISTS schedule_station_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      schedule_id INTEGER NOT NULL,
+      station_id INTEGER NOT NULL,
+      station_seq INTEGER NOT NULL,
+      planned_arrival_time TEXT,
+      actual_arrival_time TEXT,
+      actual_departure_time TEXT,
+      boarded_count INTEGER DEFAULT 0,
+      absent_count INTEGER DEFAULT 0,
+      is_delayed INTEGER DEFAULT 0,
+      delay_minutes INTEGER DEFAULT 0,
+      delay_alerted INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
+      FOREIGN KEY (schedule_id) REFERENCES schedules(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS ride_requests (
@@ -225,6 +244,10 @@ function initTables(database: Database) {
       seat_no INTEGER,
       ticket_code TEXT,
       rejection_reason TEXT,
+      is_waitlist INTEGER DEFAULT 0,
+      waitlist_order INTEGER,
+      rescheduled_from INTEGER,
+      reschedule_count INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
 
@@ -265,10 +288,12 @@ function initTables(database: Database) {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       schedule_id INTEGER NOT NULL,
       driver_id INTEGER NOT NULL,
+      old_driver_id INTEGER,
       reason TEXT,
       status TEXT DEFAULT 'pending',
       approver TEXT,
       approved_at TEXT,
+      rejection_reason TEXT,
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
 
