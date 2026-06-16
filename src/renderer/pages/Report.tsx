@@ -69,16 +69,11 @@ const ReportPage: React.FC = () => {
  return;
  }
  try {
- const { dialog } = window.require('electron').remote || window.require('@electron/remote');
- const result = await dialog.showSaveDialog({
- title: '导出PDF报表',
- defaultPath: `通勤月报_${currentReport.reportMonth}.pdf`,
- filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
- });
- if (!result.canceled && result.filePath) {
- await reportApi.exportPdf(currentReport.reportMonth, result.filePath);
- message.success('PDF导出成功: ' + result.filePath);
+ const result = await reportApi.exportPdf(currentReport.reportMonth);
+ if (result === false) {
+   return;
  }
+ message.success('PDF导出成功');
  }
  catch (err: any) {
  message.error('导出失败: ' + err.message);

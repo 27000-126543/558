@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Table, Button, Modal, Form, Input, InputNumber, Select, Space, message, Card, Tag, Progress } from 'antd';
 import { PlusOutlined, EditOutlined, DeleteOutlined, PlayCircleOutlined, ToolOutlined } from '@ant-design/icons';
 import { vehicleApi } from '../api';
@@ -22,10 +22,13 @@ const VehiclePage: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [vehicles, setVehicles] = useState<Vehicle[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
+  const [mileageModalOpen, setMileageModalOpen] = useState(false);
+  const [returnVehicle, setReturnVehicle] = useState<Vehicle | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [form] = Form.useForm();
+  const [mileageForm] = Form.useForm();
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const data = await vehicleApi.getAll();
@@ -35,11 +38,11 @@ const VehiclePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   const handleSubmit = async (values: any) => {
     try {
@@ -79,15 +82,31 @@ const VehiclePage: React.FC = () => {
     });
   };
 
-  const handleUpdateStatus = async (id: number, status: string) => {
+  const handleDepart = async (id: number) => {
     try {
-      const v = vehicles.find((x) => x.id === id);
-      let mileage = v?.mileage;
-      if (status === 'arrived' && v) {
-        mileage = v.mileage + 50;
-      }
-      await vehicleApi.updateStatus(id, status, mileage);
-      message.success('状态已更新');
+      await vehicleApi.updateStatus(id, 'running');
+      message.success('车辆已发车');
+      loadData();
+    } catch (err: any) {
+      message.error(err.message);
+    }
+  };
+
+  const handleReturnClick = (record: Vehicle) => {
+    setReturnVehicle(record);
+    mileageForm.setFieldsValue({ mileage: 50 });
+    setMileageModalOpen(true);
+  };
+
+  const handleReturnSubmit = async (values: any) => {
+    if (!returnVehicle) return;
+    try {
+      const newMileage = returnVehicle.mileage + (values.mileage || 0);
+      await vehicleApi.updateStatus(returnVehicle.id, 'idle', newMileage);
+      message.success(`车辆已归队，新增里程${values.mileage}km，总里程${newMileage}km`);
+      setMileageModalOpen(false);
+      setReturnVehicle(null);
+      mileageForm.resetFields();
       loadData();
     } catch (err: any) {
       message.error(err.message);
@@ -140,7 +159,7 @@ const VehiclePage: React.FC = () => {
               size="small"
               type="link"
               icon={<PlayCircleOutlined />}
-              onClick={() => handleUpdateStatus(record.id, 'running')}
+              onClick={() => handleDepart(record.id)}
             >
               发车
             </Button>
@@ -150,7 +169,7 @@ const VehiclePage: React.FC = () => {
               size="small"
               type="link"
               icon={<ToolOutlined />}
-              onClick={() => handleUpdateStatus(record.id, 'idle')}
+              onClick={() => handleReturnClick(record)}
             >
               归队
             </Button>
@@ -220,6 +239,31 @@ const VehiclePage: React.FC = () => {
               <Button type="primary" htmlType="submit">
                 保存
               </Button>
+            </Space>
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      <Modal
+        title={`车辆归队 - ${returnVehicle?.plateNo || ''}`}
+        open={mileageModalOpen}
+        onCancel={() => { setMileageModalOpen(false); setReturnVehicle(null); }}
+        footer={null}
+        width={400}
+      >
+        {returnVehicle && (
+          <div style={{ marginBottom: 16, color: '#666' }}>
+            当前里程：{returnVehicle.mileage.toLocaleString()} km | 下次维保：{returnVehicle.nextMaintenanceMileage.toLocaleString()} km
+          </div>
+        )}
+        <Form form={mileageForm} layout="vertical" onFinish={handleReturnSubmit}>
+          <Form.Item label="本次行驶里程(km)" name="mileage" rules={[{ required: true, message: '请输入行驶里程' }]}>
+            <InputNumber min={1} style={{ width: '100%' }} placeholder="输入本次行驶公里数" />
+          </Form.Item>
+          <Form.Item style={{ marginBottom: 0, textAlign: 'right' }}>
+            <Space>
+              <Button onClick={() => { setMileageModalOpen(false); setReturnVehicle(null); }}>取消</Button>
+              <Button type="primary" htmlType="submit">确认归队</Button>
             </Space>
           </Form.Item>
         </Form>

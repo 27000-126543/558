@@ -139,3 +139,88 @@ export async function getSchedulePassengers(scheduleId: number): Promise<ApiResp
     return { success: false, error: err.message };
   }
 }
+
+export async function handleDelay(id: number): Promise<ApiResponse<{
+  schedule: Schedule;
+  alert: any;
+  replacementVehicles: any[];
+  rescheduledSchedule: Schedule | null;
+}>> {
+  try {
+    const db = await getDb();
+    const scheduleRow = db.prepare(
+      `SELECT s.*, r.route_name, v.plate_no, d.name as driver_name
+       FROM schedules s
+       LEFT JOIN routes r ON s.route_id = r.id
+       LEFT JOIN vehicles v ON s.vehicle_id = v.id
+       LEFT JOIN drivers d ON s.driver_id = d.id
+       WHERE s.id = ?`
+    ).get(id) as any;
+
+    if (!scheduleRow) {
+      return { success: false, error: '班次不存在' };
+    }
+
+    db.prepare("UPDATE schedules SET status = 'delayed' WHERE id = ?").run(id);
+
+    const alertMsg = `班次${scheduleRow.schedule_no}（路线:${scheduleRow.route_name || '-'}，车辆:${scheduleRow.plate_no || '-'}，司机:${scheduleRow.driver_name || '-'}）发生延误`;
+    db.prepare(
+      'INSERT INTO alerts (type, level, title, message, related_id) VALUES (?, ?, ?, ?, ?)'
+    ).run('delay', 'danger', '班次延误预警', alertMsg, id);
+
+    const replacementVehicles = db.prepare(
+      "SELECT * FROM vehicles WHERE status = 'idle' AND id != ? LIMIT 3"
+    ).all(scheduleRow.vehicle_id) as any[];
+
+    let rescheduledSchedule: Schedule | null = null;
+    if (replacementVehicles.length > 0) {
+      const replacement = replacementVehicles[0];
+      const drivers = db.prepare("SELECT * FROM drivers WHERE status = 'on_duty' AND id != ? LIMIT 1").all(scheduleRow.driver_id) as any[];
+      const newDriverId = drivers.length > 0 ? drivers[0].id : scheduleRow.driver_id;
+      const newScheduleNo = 'S' + Date.now();
+      const result = db.prepare(
+        `INSERT INTO schedules (schedule_no, route_id, vehicle_id, driver_id, departure_time, date, status)
+         VALUES (?, ?, ?, ?, ?, ?, 'pending')`
+      ).run(newScheduleNo, scheduleRow.route_id, replacement.id, newDriverId, scheduleRow.departure_time, scheduleRow.date);
+      const newScheduleRow = db.prepare('SELECT * FROM schedules WHERE id = ?').get(result.lastInsertRowid);
+      rescheduledSchedule = rowToSchedule(newScheduleRow);
+    }
+
+    const updatedRow = db.prepare('SELECT * FROM schedules WHERE id = ?').get(id);
+    return {
+      success: true,
+      data: {
+        schedule: rowToSchedule(updatedRow),
+        alert: { title: '班次延误预警', message: alertMsg },
+        replacementVehicles: replacementVehicles.map((v: any) => ({
+          id: v.id, plateNo: v.plate_no, model: v.model, capacity: v.capacity,
+        })),
+        rescheduledSchedule,
+      },
+    };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}
+
+export async function confirmPassengers(scheduleId: number): Promise<ApiResponse<{ confirmed: boolean; confirmedAt: string }>> {
+  try {
+    const db = await getDb();
+    const schedule = db.prepare('SELECT * FROM schedules WHERE id = ?').get(scheduleId) as any;
+    if (!schedule) {
+      return { success: false, error: '班次不存在' };
+    }
+    if (schedule.passenger_confirmed === 1) {
+      return { success: false, error: '该班次乘客名单已确认，无需重复确认' };
+    }
+
+    const now = new Date().toISOString().replace('T', ' ').substring(0, 19);
+    db.prepare(
+      "UPDATE schedules SET passenger_confirmed = 1, passenger_confirmed_at = ? WHERE id = ?"
+    ).run(now, scheduleId);
+
+    return { success: true, data: { confirmed: true, confirmedAt: now } };
+  } catch (err: any) {
+    return { success: false, error: err.message };
+  }
+}

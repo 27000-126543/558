@@ -144,7 +144,7 @@ const MaintenancePage: React.FC = () => {
       setPartsUsed([]);
       loadData();
     } catch (err: any) {
-      message.error(err.message);
+      Modal.error({ title: '无法完成工单', content: err.message });
     }
   };
 

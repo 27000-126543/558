@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Table,
   Button,
@@ -13,12 +13,12 @@ import {
   Card,
   Descriptions,
   Input,
-  Popconfirm,
+  Alert,
 } from 'antd';
-import { PlusOutlined, EyeOutlined, EditOutlined, PlayCircleOutlined, CheckCircleOutlined, WarningOutlined } from '@ant-design/icons';
+import { PlusOutlined, EyeOutlined, EditOutlined, PlayCircleOutlined, CheckCircleOutlined, WarningOutlined, CheckOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import { scheduleApi, routeApi, vehicleApi, driverApi, adjustmentApi } from '../api';
-import type { Schedule, Route, Vehicle, Driver, RideRequest } from '../../shared/types';
+import type { Schedule, Route, Vehicle, Driver } from '../../shared/types';
 
 const statusColors: Record<string, string> = {
   pending: 'default',
@@ -48,10 +48,14 @@ const SchedulePage: React.FC = () => {
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [currentSchedule, setCurrentSchedule] = useState<Schedule | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
+  const [delayResult, setDelayResult] = useState<any>(null);
+  const [delayModalOpen, setDelayModalOpen] = useState(false);
+  const [passengerConfirmed, setPassengerConfirmed] = useState(false);
+  const [confirmingPassengers, setConfirmingPassengers] = useState(false);
   const [form] = Form.useForm();
   const [adjustForm] = Form.useForm();
 
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [s, r, v, d] = await Promise.all([
@@ -69,11 +73,11 @@ const SchedulePage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
 
   const handleSubmit = async (values: any) => {
     try {
@@ -116,10 +120,44 @@ const SchedulePage: React.FC = () => {
     try {
       const data = await scheduleApi.getPassengers(id);
       setPassengers(data);
+      const schedule = schedules.find((s) => s.id === id);
+      setCurrentSchedule(schedule || null);
+      setPassengerConfirmed((schedule as any)?.passenger_confirmed === 1);
       setPassengerOpen(true);
     } catch (err: any) {
       message.error(err.message);
     }
+  };
+
+  const handleConfirmPassengers = async () => {
+    if (!currentSchedule) return;
+    setConfirmingPassengers(true);
+    try {
+      const result = await scheduleApi.confirmPassengers(currentSchedule.id);
+      setPassengerConfirmed(true);
+      message.success(`乘客名单已确认，确认时间：${result.confirmedAt}`);
+    } catch (err: any) {
+      message.error(err.message);
+    } finally {
+      setConfirmingPassengers(false);
+    }
+  };
+
+  const handleDelay = async (id: number) => {
+    Modal.confirm({
+      title: '标记班次延误?',
+      content: '系统将自动推送预警通知并尝试重新调度',
+      onOk: async () => {
+        try {
+          const result = await scheduleApi.handleDelay(id);
+          setDelayResult(result);
+          setDelayModalOpen(true);
+          loadData();
+        } catch (err: any) {
+          message.error(err.message);
+        }
+      },
+    });
   };
 
   const handleEdit = (record: Schedule) => {
@@ -213,34 +251,25 @@ const SchedulePage: React.FC = () => {
             </>
           )}
           {record.status === 'departed' && (
-            <Button
-              size="small"
-              type="link"
-              icon={<CheckCircleOutlined />}
-              onClick={() => handleUpdateStatus(record.id, 'arrived')}
-            >
-              到达
-            </Button>
-          )}
-          {record.status === 'departed' && (
-            <Button
-              size="small"
-              type="link"
-              danger
-              icon={<WarningOutlined />}
-              onClick={() => {
-                Modal.confirm({
-                  title: '标记班次延误?',
-                  content: '系统将自动推送预警并尝试重新调度',
-                  onOk: async () => {
-                    await handleUpdateStatus(record.id, 'delayed');
-                    message.warning('延误预警已推送');
-                  },
-                });
-              }}
-            >
-              延误预警
-            </Button>
+            <>
+              <Button
+                size="small"
+                type="link"
+                icon={<CheckCircleOutlined />}
+                onClick={() => handleUpdateStatus(record.id, 'arrived')}
+              >
+                到达
+              </Button>
+              <Button
+                size="small"
+                type="link"
+                danger
+                icon={<WarningOutlined />}
+                onClick={() => handleDelay(record.id)}
+              >
+                延误预警
+              </Button>
+            </>
           )}
         </Space>
       ),
@@ -304,7 +333,16 @@ const SchedulePage: React.FC = () => {
         </Form>
       </Modal>
 
-      <Modal title="乘客名单" open={passengerOpen} onCancel={() => setPassengerOpen(false)} footer={null} width={700}>
+      <Modal title="乘客名单" open={passengerOpen} onCancel={() => setPassengerOpen(false)} footer={null} width={750}>
+        {passengerConfirmed && (
+          <Alert
+            type="success"
+            showIcon
+            icon={<CheckCircleOutlined />}
+            message="司机已确认乘客名单"
+            style={{ marginBottom: 16 }}
+          />
+        )}
         {passengers.length === 0 ? (
           <div style={{ textAlign: 'center', padding: 40, color: '#999' }}>暂无乘客</div>
         ) : (
@@ -322,6 +360,80 @@ const SchedulePage: React.FC = () => {
             ]}
             dataSource={passengers as any[]}
           />
+        )}
+        <div style={{ marginTop: 16, textAlign: 'right' }}>
+          <Space>
+            <Button onClick={() => setPassengerOpen(false)}>关闭</Button>
+            {!passengerConfirmed && (
+              <Button
+                type="primary"
+                icon={<CheckOutlined />}
+                loading={confirmingPassengers}
+                onClick={handleConfirmPassengers}
+              >
+                确认乘客名单
+              </Button>
+            )}
+          </Space>
+        </div>
+      </Modal>
+
+      <Modal title="延误预警结果" open={delayModalOpen} onCancel={() => setDelayModalOpen(false)} footer={null} width={600}>
+        {delayResult && (
+          <div>
+            <Alert
+              type="error"
+              showIcon
+              message={delayResult.alert?.title}
+              description={delayResult.alert?.message}
+              style={{ marginBottom: 16 }}
+            />
+
+            {delayResult.replacementVehicles?.length > 0 && (
+              <Card type="inner" title="推荐可替换车辆" style={{ marginBottom: 16 }} size="small">
+                <Table
+                  size="small"
+                  pagination={false}
+                  rowKey="id"
+                  columns={[
+                    { title: '车牌号', dataIndex: 'plateNo', key: 'plateNo' },
+                    { title: '车型', dataIndex: 'model', key: 'model' },
+                    { title: '座位数', dataIndex: 'capacity', key: 'capacity' },
+                  ]}
+                  dataSource={delayResult.replacementVehicles}
+                />
+              </Card>
+            )}
+
+            {delayResult.rescheduledSchedule && (
+              <Card type="inner" title="系统已生成补发班次（待确认）" size="small">
+                <Descriptions column={2} size="small">
+                  <Descriptions.Item label="班次编号">{delayResult.rescheduledSchedule.scheduleNo}</Descriptions.Item>
+                  <Descriptions.Item label="路线">
+                    {routes.find((r) => r.id === delayResult.rescheduledSchedule.routeId)?.routeName || '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="车辆">
+                    {vehicles.find((v) => v.id === delayResult.rescheduledSchedule.vehicleId)?.plateNo || '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="司机">
+                    {drivers.find((d) => d.id === delayResult.rescheduledSchedule.driverId)?.name || '-'}
+                  </Descriptions.Item>
+                  <Descriptions.Item label="发车时间">{delayResult.rescheduledSchedule.departureTime}</Descriptions.Item>
+                  <Descriptions.Item label="状态">
+                    <Tag color="orange">待确认</Tag>
+                  </Descriptions.Item>
+                </Descriptions>
+              </Card>
+            )}
+
+            {delayResult.replacementVehicles?.length === 0 && !delayResult.rescheduledSchedule && (
+              <Alert type="warning" message="暂无可用替换车辆，请手动安排调度" />
+            )}
+
+            <div style={{ marginTop: 16, textAlign: 'right' }}>
+              <Button type="primary" onClick={() => setDelayModalOpen(false)}>知道了</Button>
+            </div>
+          </div>
         )}
       </Modal>
 

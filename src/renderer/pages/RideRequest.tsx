@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import {
   Table,
   Button,
@@ -48,7 +48,10 @@ const RideRequestPage: React.FC = () => {
   const [currentTicket, setCurrentTicket] = useState<RideRequest | null>(null);
   const [form] = Form.useForm();
 
-  const loadData = async () => {
+  const [selectedDirection, setSelectedDirection] = useState<string>('to_company');
+  const [selectedRouteId, setSelectedRouteId] = useState<number | null>(null);
+
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const [r, e, rt] = await Promise.all([
@@ -64,11 +67,25 @@ const RideRequestPage: React.FC = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [loadData]);
+
+  const filteredRoutes = routes.filter((r) => r.direction === selectedDirection);
+  const selectedRoute = routes.find((r) => r.id === selectedRouteId) || null;
+
+  const handleDirectionChange = (dir: string) => {
+    setSelectedDirection(dir);
+    setSelectedRouteId(null);
+    form.setFieldsValue({ routeId: undefined, stationId: undefined, rideTime: undefined });
+  };
+
+  const handleRouteChange = (routeId: number) => {
+    setSelectedRouteId(routeId);
+    form.setFieldsValue({ stationId: undefined, rideTime: undefined });
+  };
 
   const handleSubmit = async (values: any) => {
     try {
@@ -79,11 +96,13 @@ const RideRequestPage: React.FC = () => {
         stationId: values.stationId,
         rideDate: values.rideDate.format('YYYY-MM-DD'),
         rideTime: values.rideTime,
-        direction: route?.direction || 'to_company',
+        direction: route?.direction || selectedDirection,
       });
       message.success('申请提交成功，已自动分配班次与座位');
       setModalOpen(false);
       form.resetFields();
+      setSelectedDirection('to_company');
+      setSelectedRouteId(null);
       loadData();
     } catch (err: any) {
       Modal.error({ title: '申请失败', content: err.message });
@@ -114,8 +133,6 @@ const RideRequestPage: React.FC = () => {
       message.error(err.message);
     }
   };
-
-  const selectedRoute = routes.find((r) => r.id === Form.useWatch('routeId', form));
 
   const columns = [
     { title: '申请编号', dataIndex: 'requestNo', key: 'requestNo' },
@@ -205,7 +222,11 @@ const RideRequestPage: React.FC = () => {
       <Card
         title="乘车申请列表"
         extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => {
+            setModalOpen(true);
+            setSelectedDirection('to_company');
+            setSelectedRouteId(null);
+          }}>
             新增申请
           </Button>
         }
@@ -213,8 +234,8 @@ const RideRequestPage: React.FC = () => {
         <Table columns={columns} dataSource={requests} rowKey="id" loading={loading} />
       </Card>
 
-      <Modal title="新增乘车申请" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null} width={600}>
-        <Form form={form} layout="vertical" onFinish={handleSubmit}>
+      <Modal title="新增乘车申请" open={modalOpen} onCancel={() => setModalOpen(false)} footer={null} width={600} destroyOnClose>
+        <Form form={form} layout="vertical" onFinish={handleSubmit} initialValues={{ direction: 'to_company' }}>
           <Form.Item label="选择员工" name="employeeId" rules={[{ required: true, message: '请选择员工' }]}>
             <Select
               showSearch
@@ -226,32 +247,25 @@ const RideRequestPage: React.FC = () => {
               }))}
             />
           </Form.Item>
-          <Form.Item label="乘车方向" name="direction" rules={[{ required: true }]} initialValue="to_company">
+          <Form.Item label="乘车方向" name="direction" rules={[{ required: true }]}>
             <Select
+              onChange={handleDirectionChange}
               options={[
                 { value: 'to_company', label: '上班' },
                 { value: 'from_company', label: '下班' },
               ]}
             />
           </Form.Item>
-          <Form.Item
-            label="选择路线"
-            name="routeId"
-            dependencies={['direction']}
-            rules={[{ required: true, message: '请选择路线' }]}
-          >
+          <Form.Item label="选择路线" name="routeId" rules={[{ required: true, message: '请选择路线' }]}>
             <Select
-              placeholder="请选择路线"
-              options={routes
-                .filter(
-                  (r) => !Form.useWatch('direction', form) || r.direction === Form.useWatch('direction', form)
-                )
-                .map((r) => ({ value: r.id, label: r.routeName }))}
+              placeholder="请先选择乘车方向"
+              onChange={handleRouteChange}
+              options={filteredRoutes.map((r) => ({ value: r.id, label: r.routeName }))}
             />
           </Form.Item>
           <Form.Item label="上车站点" name="stationId" rules={[{ required: true, message: '请选择站点' }]}>
             <Select
-              placeholder="请选择站点"
+              placeholder={selectedRouteId ? '请选择站点' : '请先选择路线'}
               options={selectedRoute?.stations.map((s) => ({ value: s.id, label: `${s.sequence}. ${s.stationName} (${s.estimatedArrivalTime})` })) || []}
             />
           </Form.Item>
@@ -260,7 +274,7 @@ const RideRequestPage: React.FC = () => {
           </Form.Item>
           <Form.Item label="乘车时间" name="rideTime" rules={[{ required: true, message: '请选择时间' }]}>
             <Select
-              placeholder="请选择时间"
+              placeholder={selectedRouteId ? '请选择时间' : '请先选择路线'}
               options={selectedRoute?.stations.map((s) => ({ value: s.estimatedArrivalTime, label: s.estimatedArrivalTime })) || []}
             />
           </Form.Item>

@@ -206,6 +206,8 @@ function initTables(database: Database) {
       actual_departure_time TEXT,
       actual_arrival_time TEXT,
       passenger_count INTEGER DEFAULT 0,
+      passenger_confirmed INTEGER DEFAULT 0,
+      passenger_confirmed_at TEXT,
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     );
 

@@ -2,6 +2,8 @@ import { getDb } from '../database';
 import type { MonthlyReport, Alert, ApiResponse, DepartmentStat, VehicleUtilization } from '../../shared/types';
 const { jsPDF } = require('jspdf');
 require('jspdf-autotable');
+const fs = require('fs');
+const { dialog } = require('electron');
 
 export async function getDashboardStats(): Promise<ApiResponse<{
   totalVehicles: number;
@@ -217,8 +219,18 @@ export async function getReportHistory(): Promise<ApiResponse<MonthlyReport[]>> 
   }
 }
 
-export async function exportReportPdf(month: string, filePath: string): Promise<ApiResponse<boolean>> {
+export async function exportReportPdf(month: string): Promise<ApiResponse<boolean>> {
   try {
+    const result = await dialog.showSaveDialog({
+      title: '导出PDF报表',
+      defaultPath: `通勤月报_${month}.pdf`,
+      filters: [{ name: 'PDF Files', extensions: ['pdf'] }],
+    });
+
+    if (result.canceled || !result.filePath) {
+      return { success: true, data: false };
+    }
+
     const report = await generateMonthlyReport(month);
     if (!report.success || !report.data) {
       return { success: false, error: report.error || '生成报表失败' };
@@ -226,40 +238,48 @@ export async function exportReportPdf(month: string, filePath: string): Promise<
 
     const doc = new jsPDF();
     doc.setFontSize(18);
-    doc.text(`Enterprise Shuttle Monthly Report - ${month}`, 14, 22);
+    doc.text(`Enterprise Shuttle Monthly Report`, 14, 22);
+    doc.setFontSize(14);
+    doc.text(`Report Month: ${month}`, 14, 32);
 
     doc.setFontSize(12);
-    doc.text(`Overall Commute Rate: ${report.data.overallCommuteRate}%`, 14, 35);
-    doc.text(`Overall On-Time Rate: ${report.data.overallOnTimeRate}%`, 14, 42);
+    doc.text(`Overall Commute Rate: ${report.data.overallCommuteRate}%`, 14, 44);
+    doc.text(`Overall On-Time Rate: ${report.data.overallOnTimeRate}%`, 14, 52);
 
     const deptData = report.data.departmentStats.map((d) => [
       d.department,
-      d.totalEmployees,
-      d.commuteCount,
+      String(d.totalEmployees),
+      String(d.commuteCount),
       `${d.commuteRate}%`,
-      d.onTimeCount,
+      String(d.onTimeCount),
       `${d.onTimeRate}%`,
     ]);
 
-    doc.autoTable({
-      startY: 50,
-      head: [['Dept', 'Total', 'Commute', 'Rate', 'OnTime', 'OT Rate']],
+    (doc as any).autoTable({
+      startY: 60,
+      head: [['Department', 'Total', 'Commute', 'Commute Rate', 'On-Time', 'On-Time Rate']],
       body: deptData,
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [22, 119, 255] },
     });
 
     const vehData = report.data.vehicleUtilization.map((v) => [
       v.plateNo,
-      v.totalTrips,
+      String(v.totalTrips),
       `${v.totalMileage}km`,
       `${v.utilizationRate}%`,
     ]);
 
-    doc.autoTable({
-      head: [['Plate', 'Trips', 'Mileage', 'Util']],
+    (doc as any).autoTable({
+      head: [['Plate No.', 'Total Trips', 'Total Mileage', 'Utilization Rate']],
       body: vehData,
+      styles: { fontSize: 10 },
+      headStyles: { fillColor: [114, 46, 209] },
     });
 
-    doc.save(filePath);
+    const pdfBuffer = Buffer.from(doc.output('arraybuffer'));
+    fs.writeFileSync(result.filePath, pdfBuffer);
+
     return { success: true, data: true };
   } catch (err: any) {
     return { success: false, error: err.message };

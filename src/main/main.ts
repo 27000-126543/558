@@ -89,6 +89,8 @@ function registerIpcHandlers() {
   ipcMain.handle(IPC.SCHEDULE.UPDATE_STATUS, async (_e, id: number, status: string) => scheduleService.updateScheduleStatus(id, status));
   ipcMain.handle(IPC.SCHEDULE.DELETE, async (_e, id: number) => scheduleService.deleteSchedule(id));
   ipcMain.handle(IPC.SCHEDULE.GET_PASSENGERS, async (_e, id: number) => scheduleService.getSchedulePassengers(id));
+  ipcMain.handle(IPC.SCHEDULE.HANDLE_DELAY, async (_e, id: number) => scheduleService.handleDelay(id));
+  ipcMain.handle(IPC.SCHEDULE.CONFIRM_PASSENGERS, async (_e, id: number) => scheduleService.confirmPassengers(id));
 
   ipcMain.handle(IPC.RIDE_REQUEST.GET_ALL, async () => rideRequestService.getAllRideRequests());
   ipcMain.handle(IPC.RIDE_REQUEST.GET_BY_EMPLOYEE, async (_e, id: number) => rideRequestService.getRideRequestsByEmployee(id));
@@ -118,7 +120,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle(IPC.REPORT.GENERATE_MONTHLY, async (_e, month: string) => reportService.generateMonthlyReport(month));
   ipcMain.handle(IPC.REPORT.GET_HISTORY, async () => reportService.getReportHistory());
-  ipcMain.handle(IPC.REPORT.EXPORT_PDF, async (_e, month: string, filePath: string) => reportService.exportReportPdf(month, filePath));
+  ipcMain.handle(IPC.REPORT.EXPORT_PDF, async (_e, month: string) => reportService.exportReportPdf(month));
   ipcMain.handle(IPC.REPORT.GET_STATS, async () => reportService.getStats());
 
   ipcMain.handle(IPC.ALERT.GET_ALL, async () => reportService.getAllAlerts());

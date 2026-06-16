@@ -50,6 +50,8 @@ export const scheduleApi = {
   updateStatus: (id: number, status: string) => call<Schedule>(IPC.SCHEDULE.UPDATE_STATUS, id, status),
   remove: (id: number) => call<boolean>(IPC.SCHEDULE.DELETE, id),
   getPassengers: (id: number) => call<any[]>(IPC.SCHEDULE.GET_PASSENGERS, id),
+  handleDelay: (id: number) => call<any>(IPC.SCHEDULE.HANDLE_DELAY, id),
+  confirmPassengers: (id: number) => call<{ confirmed: boolean; confirmedAt: string }>(IPC.SCHEDULE.CONFIRM_PASSENGERS, id),
 };
 
 export const rideRequestApi = {
@@ -91,7 +93,7 @@ export const adjustmentApi = {
 export const reportApi = {
   generateMonthly: (month: string) => call<MonthlyReport>(IPC.REPORT.GENERATE_MONTHLY, month),
   getHistory: () => call<MonthlyReport[]>(IPC.REPORT.GET_HISTORY),
-  exportPdf: (month: string, filePath: string) => call<boolean>(IPC.REPORT.EXPORT_PDF, month, filePath),
+  exportPdf: (month: string) => call<boolean>(IPC.REPORT.EXPORT_PDF, month),
   getStats: () => call<any>(IPC.REPORT.GET_STATS),
 };
 

@@ -35,6 +35,8 @@ const IPC = {
     UPDATE_STATUS: 'schedule:updateStatus',
     DELETE: 'schedule:delete',
     GET_PASSENGERS: 'schedule:getPassengers',
+    HANDLE_DELAY: 'schedule:handleDelay',
+    CONFIRM_PASSENGERS: 'schedule:confirmPassengers',
   },
   RIDE_REQUEST: {
     GET_ALL: 'rideRequest:getAll',

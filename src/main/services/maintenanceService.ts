@@ -98,19 +98,28 @@ export async function updateWorkOrder(id: number, data: Partial<MaintenanceWorkO
 export async function completeWorkOrder(id: number, partsUsed: { partId: number; partName: string; quantity: number; unitPrice: number }[]): Promise<ApiResponse<MaintenanceWorkOrder>> {
   try {
     const db = await getDb();
+    for (const part of partsUsed) {
+      if (!part.partId || part.quantity <= 0) continue;
+      const current = db.prepare('SELECT stock, part_name FROM spare_parts WHERE id = ?').get(part.partId) as any;
+      if (!current) {
+        return { success: false, error: `备件ID${part.partId}不存在` };
+      }
+      if (current.stock < part.quantity) {
+        return { success: false, error: `备件"${current.part_name}"库存不足（当前库存${current.stock}，需要${part.quantity}）` };
+      }
+    }
+
     const tx = db.transaction(() => {
       for (const part of partsUsed) {
-        const current = db.prepare('SELECT stock FROM spare_parts WHERE id = ?').get(part.partId);
-        if (current && current.stock >= part.quantity) {
-          db.prepare('UPDATE spare_parts SET stock = stock - ? WHERE id = ?').run(part.quantity, part.partId);
-          const updated = db.prepare('SELECT stock, safety_stock FROM spare_parts WHERE id = ?').get(part.partId);
-          if (updated.stock < updated.safety_stock) {
-            const existingAlert = db.prepare("SELECT * FROM alerts WHERE related_id = ? AND type = 'stock' AND is_read = 0").get(part.partId);
-            if (!existingAlert) {
-              db.prepare(
-                'INSERT INTO alerts (type, level, title, message, related_id) VALUES (?, ?, ?, ?, ?)'
-              ).run('stock', 'warning', '备件库存不足', `${part.partName}库存低于安全库存(当前${updated.stock}，安全库存${updated.safety_stock})`, part.partId);
-            }
+        if (!part.partId || part.quantity <= 0) continue;
+        db.prepare('UPDATE spare_parts SET stock = stock - ? WHERE id = ?').run(part.quantity, part.partId);
+        const updated = db.prepare('SELECT stock, safety_stock, part_name FROM spare_parts WHERE id = ?').get(part.partId) as any;
+        if (updated.stock < updated.safety_stock) {
+          const existingAlert = db.prepare("SELECT * FROM alerts WHERE related_id = ? AND type = 'stock' AND is_read = 0").get(part.partId);
+          if (!existingAlert) {
+            db.prepare(
+              'INSERT INTO alerts (type, level, title, message, related_id) VALUES (?, ?, ?, ?, ?)'
+            ).run('stock', 'warning', '备件库存不足', `${updated.part_name}库存低于安全库存(当前${updated.stock}，安全库存${updated.safety_stock})`, part.partId);
           }
         }
       }
